@@ -242,6 +242,10 @@ typedef struct b3World
 	float contactSpeed;
 	float contactHertz;
 	float contactDampingRatio;
+	float jointHertz;
+	float jointDampingRatio;
+	int jointRelaxIterations;
+	bool solveJointsAfterContacts;
 	float contactRecycleDistance;
 
 	b3FrictionCallback* frictionCallback;

@@ -1058,6 +1058,16 @@ static void b3ExecuteBlock( b3SolverStage* stage, b3StepContext* context, b3Solv
 			}
 			break;
 
+		case b3_stageSolveJoints:
+		case b3_stageRelaxJoints:
+			// nukabox3d: joint-only pass, contacts are skipped
+			if ( blockType == b3_graphJointBlock )
+			{
+				bool useBias = stageType == b3_stageSolveJoints;
+				b3SolveJointsTask( block, context, useBias, workerIndex );
+			}
+			break;
+
 		case b3_stageRestitution:
 			if ( blockType == b3_graphWideContactBlock )
 			{
@@ -1248,6 +1258,8 @@ static void b3SolverTask( void* taskContext )
 
 		int graphSyncIndex = 1;
 		int subStepCount = context->subStepCount;
+		bool solveJointsAfterContacts = context->world->solveJointsAfterContacts;
+		int jointRelaxIterations = context->world->jointRelaxIterations;
 		for ( int subStepIndex = 0; subStepIndex < subStepCount; ++subStepIndex )
 		{
 			// stageIndex restarted each iteration
@@ -1296,6 +1308,21 @@ static void b3SolverTask( void* taskContext )
 				graphSyncIndex += 1;
 			}
 
+			// nukabox3d: optionally solve joints again after the contacts so they get the last word
+			if ( solveJointsAfterContacts )
+			{
+				b3SolveJoints_Overflow( context, true );
+
+				for ( int colorIndex = 0; colorIndex < activeColorCount; ++colorIndex )
+				{
+					syncBits = ( graphSyncIndex << 16 ) | iterationStageIndex;
+					B3_ASSERT( stages[iterationStageIndex].type == b3_stageSolveJoints );
+					b3ExecuteMainStage( stages + iterationStageIndex, context, syncBits );
+					iterationStageIndex += 1;
+				}
+				graphSyncIndex += 1;
+			}
+
 			profile->solveImpulses += b3GetMillisecondsAndReset( &ticks );
 
 			// Integrate positions
@@ -1324,12 +1351,32 @@ static void b3SolverTask( void* taskContext )
 				graphSyncIndex += 1;
 			}
 
+			// nukabox3d: extra joint-only relax passes
+			for ( int j = 0; j < jointRelaxIterations; ++j )
+			{
+				b3SolveJoints_Overflow( context, false );
+
+				for ( int colorIndex = 0; colorIndex < activeColorCount; ++colorIndex )
+				{
+					syncBits = ( graphSyncIndex << 16 ) | iterationStageIndex;
+					B3_ASSERT( stages[iterationStageIndex].type == b3_stageRelaxJoints );
+					b3ExecuteMainStage( stages + iterationStageIndex, context, syncBits );
+					iterationStageIndex += 1;
+				}
+				graphSyncIndex += 1;
+			}
+
 			profile->relaxImpulses += b3GetMillisecondsAndReset( &ticks );
 		}
 
 		// Advance the stage according to the sub-stepping tasks just completed
 		// integrate velocities / warm start / solve / integrate positions / relax
 		stageIndex += 1 + activeColorCount + ITERATIONS * activeColorCount + 1 + RELAX_ITERATIONS * activeColorCount;
+		if ( solveJointsAfterContacts )
+		{
+			stageIndex += activeColorCount;
+		}
+		stageIndex += jointRelaxIterations * activeColorCount;
 
 		int restitutionIterations = context->world->restitutionIterations;
 		if ( restitutionIterations > 0 && b3AtomicLoadInt( &context->anyRestitution ) != 0 )
@@ -1776,10 +1823,14 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 		stageCount += activeColorCount;
 		// b3_stageSolve
 		stageCount += ITERATIONS * activeColorCount;
+		// b3_stageSolveJoints (nukabox3d, optional)
+		stageCount += world->solveJointsAfterContacts ? activeColorCount : 0;
 		// b3_stageIntegratePositions
 		stageCount += 1;
 		// b3_stageRelax
 		stageCount += RELAX_ITERATIONS * activeColorCount;
+		// b3_stageRelaxJoints (nukabox3d, optional)
+		stageCount += world->jointRelaxIterations * activeColorCount;
 		// b3_stageRestitution
 		stageCount += activeColorCount;
 		// b3_stageStoreWideImpulses
@@ -1858,9 +1909,16 @@ void b3Solve( b3World* world, b3StepContext* stepContext )
 								   activeColorIndices );
 		stage = b3InitColorStages( stage, b3_stageSolve, ITERATIONS, activeColorCount, graphColorBlocks, graphBlockCounts,
 								   activeColorIndices );
+		if ( world->solveJointsAfterContacts )
+		{
+			stage = b3InitColorStages( stage, b3_stageSolveJoints, 1, activeColorCount, graphColorBlocks, graphBlockCounts,
+									   activeColorIndices );
+		}
 		stage = b3InitStage( stage, b3_stageIntegratePositions, bodyBlocks, bodyDim.count, UINT8_MAX );
 		stage = b3InitColorStages( stage, b3_stageRelax, RELAX_ITERATIONS, activeColorCount, graphColorBlocks, graphBlockCounts,
 								   activeColorIndices );
+		stage = b3InitColorStages( stage, b3_stageRelaxJoints, world->jointRelaxIterations, activeColorCount, graphColorBlocks,
+								   graphBlockCounts, activeColorIndices );
 		stage = b3InitColorStages( stage, b3_stageRestitution, 1, activeColorCount, graphColorBlocks, graphBlockCounts,
 								   activeColorIndices );
 		stage = b3InitStage( stage, b3_stageStoreWideImpulses, convexBlocks, convexPrepareDim.count, UINT8_MAX );

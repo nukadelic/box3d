@@ -336,6 +336,10 @@ b3WorldId b3CreateWorld( const b3WorldDef* def )
 	world->contactSpeed = def->contactSpeed;
 	world->contactHertz = def->contactHertz;
 	world->contactDampingRatio = def->contactDampingRatio;
+	world->jointHertz = b3MaxFloat( def->jointHertz, 0.0f );
+	world->jointDampingRatio = b3MaxFloat( def->jointDampingRatio, 0.0f );
+	world->jointRelaxIterations = b3ClampInt( def->jointRelaxIterations, 0, 16 );
+	world->solveJointsAfterContacts = def->solveJointsAfterContacts;
 	world->contactRecycleDistance = B3_CONTACT_RECYCLE_DISTANCE;
 
 	if ( def->frictionCallback == NULL )

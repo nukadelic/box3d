@@ -1124,6 +1124,103 @@ static int TestArmature( void )
 	return 0;
 }
 
+// nukabox3d: two-link leg. A static hip drives the thigh with a strong motor that pushes the foot down into
+// the ground. The contact pushes back, so the foot ends up above the depth the joints command. Returns that
+// height above the ground top in meters (smaller means the joints resisted the contact more).
+static float RunFootLift( const b3WorldDef* worldDef )
+{
+	b3WorldId worldId = b3CreateWorld( worldDef );
+
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	b3BodyId ground = b3CreateBody( worldId, &bodyDef );
+	b3BoxHull groundBox = b3MakeBoxHull( 10.0f, 1.0f, 10.0f );
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+	b3CreateHullShape( ground, &shapeDef, &groundBox.base );
+
+	// the ground top is at y = 1, the foot starts resting on it
+	bodyDef.type = b3_dynamicBody;
+	bodyDef.position = (b3Vec3){ 0.0f, 1.1f, 0.0f };
+	b3BodyId foot = b3CreateBody( worldId, &bodyDef );
+	b3BoxHull footBox = b3MakeCubeHull( 0.1f );
+	shapeDef.density = 5.0f;
+	b3CreateHullShape( foot, &shapeDef, &footBox.base );
+
+	bodyDef.position = (b3Vec3){ -0.5f, 1.1f, 0.0f };
+	b3BodyId thigh = b3CreateBody( worldId, &bodyDef );
+	b3BoxHull thighBox = b3MakeBoxHull( 0.5f, 0.1f, 0.1f );
+	shapeDef.density = 1.0f;
+	b3CreateHullShape( thigh, &shapeDef, &thighBox.base );
+
+	// knee, plain hinge
+	b3RevoluteJointDef knee = b3DefaultRevoluteJointDef();
+	knee.base.bodyIdA = thigh;
+	knee.base.bodyIdB = foot;
+	knee.base.localFrameA.p = (b3Vec3){ 0.5f, 0.0f, 0.0f };
+	b3CreateRevoluteJoint( worldId, &knee );
+
+	// hip, motor rotates the leg so the foot moves down
+	b3RevoluteJointDef hip = b3DefaultRevoluteJointDef();
+	hip.base.bodyIdA = ground;
+	hip.base.bodyIdB = thigh;
+	hip.base.localFrameA.p = (b3Vec3){ -1.0f, 1.1f, 0.0f };
+	hip.base.localFrameB.p = (b3Vec3){ -0.5f, 0.0f, 0.0f };
+	hip.enableMotor = true;
+	hip.maxMotorTorque = 400.0f;
+	hip.motorSpeed = -1.0f;
+	b3CreateRevoluteJoint( worldId, &hip );
+
+	for ( int i = 0; i < 120; ++i )
+	{
+		b3World_Step( worldId, 1.0f / 60.0f, 4 );
+	}
+
+	float lift = (float)b3Body_GetPosition( foot ).y - 1.0f;
+	b3DestroyWorld( worldId );
+	return lift;
+}
+
+static int TestJointResistsContact( void )
+{
+	b3WorldDef def = b3DefaultWorldDef();
+	ENSURE( def.jointHertz == 0.0f );
+	ENSURE( def.jointDampingRatio == 0.0f );
+	ENSURE( def.jointRelaxIterations == 0 );
+	ENSURE( def.solveJointsAfterContacts == false );
+
+	// explicit zero values are bit identical to the defaults
+	float liftDefault = RunFootLift( &def );
+	b3WorldDef zero = def;
+	zero.jointHertz = 0.0f;
+	zero.jointDampingRatio = 0.0f;
+	zero.jointRelaxIterations = 0;
+	zero.solveJointsAfterContacts = false;
+	ENSURE( RunFootLift( &zero ) == liftDefault );
+	ENSURE( liftDefault > 0.0f );
+
+	// stiffer joints push the foot deeper against the contact
+	b3WorldDef stiff = def;
+	stiff.jointHertz = 1000.0f;
+	stiff.jointDampingRatio = 10.0f;
+	stiff.jointRelaxIterations = 4;
+	stiff.solveJointsAfterContacts = true;
+	float liftStiff = RunFootLift( &stiff );
+	ENSURE( liftStiff < liftDefault );
+
+	// each setting on its own also helps or at least does not hurt
+	b3WorldDef relax = def;
+	relax.jointRelaxIterations = 4;
+	ENSURE( RunFootLift( &relax ) < liftDefault );
+	b3WorldDef after = def;
+	after.solveJointsAfterContacts = true;
+	ENSURE( RunFootLift( &after ) < liftDefault );
+	b3WorldDef hertz = def;
+	hertz.jointHertz = 1000.0f;
+	hertz.jointDampingRatio = 10.0f;
+	ENSURE( RunFootLift( &hertz ) < liftDefault );
+
+	return 0;
+}
+
 int JointTest( void )
 {
 	RUN_SUBTEST( TestParallelJoint );
@@ -1138,6 +1235,7 @@ int JointTest( void )
 	RUN_SUBTEST( TestSpringTorqueClamp );
 	RUN_SUBTEST( TestSwingTwistSpring );
 	RUN_SUBTEST( TestArmature );
+	RUN_SUBTEST( TestJointResistsContact );
 	RUN_SUBTEST( TestWeldJoint );
 	RUN_SUBTEST( TestWheelJoint );
 	RUN_SUBTEST( TestCreateJointClearsContacts );

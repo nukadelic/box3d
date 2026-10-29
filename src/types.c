@@ -21,6 +21,10 @@ b3WorldDef b3DefaultWorldDef( void )
 	def.contactSpeed = 3.0f * lengthUnits;
 	def.contactHertz = 30.0f;
 	def.contactDampingRatio = 10.0f;
+	def.jointHertz = 0.0f;
+	def.jointDampingRatio = 0.0f;
+	def.jointRelaxIterations = 0;
+	def.solveJointsAfterContacts = false;
 
 	// 400 meters per second, faster than the speed of sound
 	def.maximumLinearSpeed = 400.0f * lengthUnits;

@@ -1616,8 +1616,12 @@ void b3Joint_SetSpringRotationTarget( b3JointId jointId, b3Quat relativeBodyRota
 void b3PrepareJoint( b3JointSim* joint, b3StepContext* context )
 {
 	// Clamp joint hertz based on the time step to reduce jitter.
-	float hertz = b3MinFloat( joint->constraintHertz, 0.25f * context->inv_h );
-	joint->constraintSoftness = b3MakeSoft( hertz, joint->constraintDampingRatio, context->h );
+	// nukabox3d: optional world override, zero keeps the per joint values
+	float constraintHertz = context->world->jointHertz > 0.0f ? context->world->jointHertz : joint->constraintHertz;
+	float constraintDampingRatio =
+		context->world->jointDampingRatio > 0.0f ? context->world->jointDampingRatio : joint->constraintDampingRatio;
+	float hertz = b3MinFloat( constraintHertz, 0.25f * context->inv_h );
+	joint->constraintSoftness = b3MakeSoft( hertz, constraintDampingRatio, context->h );
 
 	switch ( joint->type )
 	{

@@ -182,6 +182,21 @@ typedef struct b3WorldDef
 	/// increasing the hertz and/or decreasing the damping ratio.
 	float contactSpeed;
 
+	/// Optional override of the joint constraint stiffness for all joints, cycles per second. Zero (default) uses
+	/// the per joint b3JointDef::constraintHertz. Raising this makes joints resist contacts more strongly.
+	float jointHertz;
+
+	/// Optional override of the joint constraint damping ratio for all joints. Zero (default) uses the per joint
+	/// b3JointDef::constraintDampingRatio.
+	float jointDampingRatio;
+
+	/// Number of extra joint-only relax passes per substep, run after the normal relax pass. Default 0.
+	/// Clamped to [0, 16]. Costs one joint pass per iteration.
+	int jointRelaxIterations;
+
+	/// Solve joints a second time after the contacts in the main solve pass so joints get the last word. Default false.
+	bool solveJointsAfterContacts;
+
 	/// Maximum linear speed. Usually meters per second.
 	float maximumLinearSpeed;
 
