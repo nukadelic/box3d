@@ -1,0 +1,635 @@
+// box3d.js facade — hand-written ergonomic readers over the flat, wasm-backed
+// buffers for contacts, per-step events, sensor overlaps, and CollideMover planes.
+//
+// This file is appended into the Emscripten MODULARIZE factory via --post-js, so
+// everything here attaches to the SAME module object as the embind bindings:
+//
+//   const b3 = await Box3D();
+//   const cb = b3.createContactsBuffer();                 // reusable, allocate once
+//   const contact = b3.createContact();                   // reusable, allocate once
+//   const manifold = b3.createManifold();                 // reusable, allocate once
+//   b3.getShapeContactData( cb, shapeId );                // fills wasm storage, grows if needed
+//   for ( let i = 0, n = b3.getNumContacts( cb ); i < n; i++ )
+//   {
+//     b3.getContactAt( contact, cb, i );                  // out-arg first, fills in place
+//     for ( let m = 0; m < contact.manifoldCount; m++ )
+//     {
+//       b3.getManifoldAt( manifold, contact, m );
+//       manifold.normal[0]; manifold.points[0].separation; // plain reads: no alloc, no crossings
+//     }
+//   }
+//
+// createX() allocates reusable out-objects; the getXAt() calls fill them in place,
+// reading a pure-JS loop over the wasm heap, so scanning allocates nothing and
+// crosses the wasm/JS boundary only for the fill.
+//
+// The packed-record tier STRIDES below come from bindings.cpp (namespace layout, via
+// _layoutMeta()) — a single source of truth, so they can't drift. The per-field READ
+// order in each reader still has to match the C++ packing order by hand.
+//
+// This file is a TEMPLATE, not linked directly. scripts/build.mjs reads bindings.cpp's
+// compiled _layoutMeta()/_outMeta() getters off a probe module and substitutes the two
+// placeholder tokens below (the LAYOUT stride table and the OUT-META reader list) with
+// literals, emitting build/facade.generated.js — which is what gets linked. So the
+// metadata still originates in bindings.cpp, but the shipped runtime never decodes those
+// strings. (Keep the raw tokens out of comments — the build substitutes them by name.)
+
+// Tier strides, published by src/bindings.cpp's layout namespace (injected at build).
+const LAYOUT = __B3_LAYOUT__;
+
+// --- shape id overlaps (sensors) -------------------------------------------
+// buffer: { count, data: Int32Array }, 3 int32 per id: index1, world0, generation
+
+function getNumShapeIds( buf ) { return buf.count; }
+
+function createShapeId() { return { index1: 0, world0: 0, generation: 0 }; }
+
+function getShapeIdAt( out, buf, i )
+{
+	const d = buf.data;
+	const s = i * LAYOUT.shapeId;
+	out.index1 = d[ s ];
+	out.world0 = d[ s + 1 ];
+	out.generation = d[ s + 2 ];
+	return out;
+}
+
+// --- contacts (contacts -> manifolds -> points) ----------------------------
+
+const CONTACT_STRIDE = LAYOUT.contact; // idA(3) idB(3) contactId(4) manifoldStart manifoldCount
+const MANIFOLD_STRIDE_F = LAYOUT.manifoldF32; // normal(3) twistImpulse frictionImpulse(3) rollingImpulse(3)
+const MANIFOLD_STRIDE_I = LAYOUT.manifoldI32; // pointStart pointCount
+const POINT_STRIDE_F = LAYOUT.pointF32; // anchorA(3) anchorB(3) separation baseSeparation normalImpulse totalNormalImpulse normalVelocity
+const POINT_STRIDE_I = LAYOUT.pointI32; // featureId triangleIndex persisted
+
+function getNumContacts( buf ) { return buf.count; }
+
+function createContact()
+{
+	return {
+		shapeIdA: { index1: 0, world0: 0, generation: 0 },
+		shapeIdB: { index1: 0, world0: 0, generation: 0 },
+		contactId: { index1: 0, world0: 0, padding: 0, generation: 0 },
+		manifoldCount: 0,
+		// internal cursor state used by getManifoldAt; do not read.
+		_buf: null,
+		_manifoldStart: 0,
+	};
+}
+
+function getContactAt( out, buf, i )
+{
+	const a = buf.contactsI32;
+	// Mode-1 buffers have no base fields (contacts start at index 0); the reusable
+	// wasm-backed buffer sets a base so we can index into the live module HEAP.
+	const s = ( buf.contactsBase | 0 ) + i * CONTACT_STRIDE;
+	const A = out.shapeIdA;
+	A.index1 = a[ s ]; A.world0 = a[ s + 1 ]; A.generation = a[ s + 2 ];
+	const B = out.shapeIdB;
+	B.index1 = a[ s + 3 ]; B.world0 = a[ s + 4 ]; B.generation = a[ s + 5 ];
+	const C = out.contactId;
+	C.index1 = a[ s + 6 ]; C.world0 = a[ s + 7 ]; C.padding = a[ s + 8 ]; C.generation = a[ s + 9 ] >>> 0;
+	out._manifoldStart = a[ s + 10 ];
+	out.manifoldCount = a[ s + 11 ];
+	out._buf = buf;
+	return out;
+}
+
+function createPoint()
+{
+	return {
+		anchorA: [ 0, 0, 0 ],
+		anchorB: [ 0, 0, 0 ],
+		separation: 0,
+		baseSeparation: 0,
+		normalImpulse: 0,
+		totalNormalImpulse: 0,
+		normalVelocity: 0,
+		featureId: 0,
+		triangleIndex: 0,
+		persisted: false,
+	};
+}
+
+// Manifolds hold at most B3_MAX_MANIFOLD_POINTS (4) points, so the point
+// sub-objects are pre-allocated once here; getManifoldAt fills points[0..pointCount).
+function createManifold()
+{
+	return {
+		normal: [ 0, 0, 0 ],
+		twistImpulse: 0,
+		frictionImpulse: [ 0, 0, 0 ],
+		rollingImpulse: [ 0, 0, 0 ],
+		pointCount: 0,
+		points: [ createPoint(), createPoint(), createPoint(), createPoint() ],
+	};
+}
+
+function getManifoldAt( out, contact, m )
+{
+	const buf = contact._buf;
+	const gm = contact._manifoldStart + m;
+	const mf = buf.manifoldsF32;
+	const mi = buf.manifoldsI32;
+	const fs = ( buf.manifoldsF32Base | 0 ) + gm * MANIFOLD_STRIDE_F;
+	const n = out.normal;
+	n[ 0 ] = mf[ fs ]; n[ 1 ] = mf[ fs + 1 ]; n[ 2 ] = mf[ fs + 2 ];
+	out.twistImpulse = mf[ fs + 3 ];
+	const fr = out.frictionImpulse;
+	fr[ 0 ] = mf[ fs + 4 ]; fr[ 1 ] = mf[ fs + 5 ]; fr[ 2 ] = mf[ fs + 6 ];
+	const rl = out.rollingImpulse;
+	rl[ 0 ] = mf[ fs + 7 ]; rl[ 1 ] = mf[ fs + 8 ]; rl[ 2 ] = mf[ fs + 9 ];
+
+	const is = ( buf.manifoldsI32Base | 0 ) + gm * MANIFOLD_STRIDE_I;
+	const pointStart = mi[ is ];
+	const pointCount = mi[ is + 1 ];
+	out.pointCount = pointCount;
+
+	const pf = buf.pointsF32;
+	const pi = buf.pointsI32;
+	const pfBase = buf.pointsF32Base | 0;
+	const piBase = buf.pointsI32Base | 0;
+	for ( let p = 0; p < pointCount; p++ )
+	{
+		const P = out.points[ p ];
+		const g = pointStart + p;
+		const ps = pfBase + g * POINT_STRIDE_F;
+		const pis = piBase + g * POINT_STRIDE_I;
+		const aA = P.anchorA;
+		aA[ 0 ] = pf[ ps ]; aA[ 1 ] = pf[ ps + 1 ]; aA[ 2 ] = pf[ ps + 2 ];
+		const aB = P.anchorB;
+		aB[ 0 ] = pf[ ps + 3 ]; aB[ 1 ] = pf[ ps + 4 ]; aB[ 2 ] = pf[ ps + 5 ];
+		P.separation = pf[ ps + 6 ];
+		P.baseSeparation = pf[ ps + 7 ];
+		P.normalImpulse = pf[ ps + 8 ];
+		P.totalNormalImpulse = pf[ ps + 9 ];
+		P.normalVelocity = pf[ ps + 10 ];
+		P.featureId = pi[ pis ] >>> 0;
+		P.triangleIndex = pi[ pis + 1 ];
+		P.persisted = pi[ pis + 2 ] !== 0;
+	}
+	return out;
+}
+
+// --- reusable, wasm-backed contact buffer (per-frame path, zero JS alloc) ----
+//
+//   const cb = b3.createContactsBuffer();          // allocate once
+//   // each frame, after stepping:
+//   b3.getShapeContactData( cb, shapeId );          // fills wasm storage, grows if needed
+//   for ( let i = 0, n = b3.getNumContacts( cb ); i < n; i++ ) { ... same readers ... }
+//   // when done:
+//   b3.destroyContactsBuffer( cb );                 // frees the wasm storage
+//
+// Refilling this buffer copies nothing to JS and allocates no typed arrays: the
+// data stays in the wasm heap and the readers index the live module HEAP views in
+// place. Read the buffer before the next step or other allocation —
+// getShapeContactData/getBodyContactData re-grab the views, so calling one each
+// frame (after stepping) is always safe.
+
+function createContactsBuffer()
+{
+	return {
+		_impl: new Module.ContactsBufferImpl(),
+		count: 0,
+		// tier views point at the live module HEAP; bases are element offsets into it
+		contactsI32: null, contactsBase: 0,
+		manifoldsF32: null, manifoldsF32Base: 0,
+		manifoldsI32: null, manifoldsI32Base: 0,
+		pointsF32: null, pointsF32Base: 0,
+		pointsI32: null, pointsI32Base: 0,
+	};
+}
+
+// Re-point the buffer's tier views/bases at the current wasm heap. HEAP32/HEAPF32
+// are module-scope views that Emscripten swaps out when memory grows, so we grab
+// them fresh (a reference copy, no allocation) and recompute the byte->element
+// offsets after every fill, when a growing std::vector may have moved too.
+function refreshContactsBuffer( buf )
+{
+	const impl = buf._impl;
+	buf.count = impl.count();
+	buf.contactsI32 = HEAP32; buf.contactsBase = impl.contactsPtr() >> 2;
+	buf.manifoldsF32 = HEAPF32; buf.manifoldsF32Base = impl.manifoldsF32Ptr() >> 2;
+	buf.manifoldsI32 = HEAP32; buf.manifoldsI32Base = impl.manifoldsI32Ptr() >> 2;
+	buf.pointsF32 = HEAPF32; buf.pointsF32Base = impl.pointsF32Ptr() >> 2;
+	buf.pointsI32 = HEAP32; buf.pointsI32Base = impl.pointsI32Ptr() >> 2;
+}
+
+function getShapeContactData( buf, shapeId )
+{
+	buf._impl.loadFromShape( shapeId );
+	refreshContactsBuffer( buf );
+	return buf;
+}
+
+function getBodyContactData( buf, bodyId )
+{
+	buf._impl.loadFromBody( bodyId );
+	refreshContactsBuffer( buf );
+	return buf;
+}
+
+function destroyContactsBuffer( buf )
+{
+	buf._impl.delete();
+	buf._impl = null;
+}
+
+// --- per-step events (reusable, wasm-backed; zero JS alloc per step) ---------
+//
+//   const eb = b3.createEventsBuffer();          // allocate once
+//   const hit = b3.createContactHitEvent();       // reusable scratch, once
+//   // each frame, after stepping:
+//   b3.getEvents( eb, world );                     // pulls all event groups into wasm storage
+//   for ( let i = 0, n = b3.getNumContactHitEvents( eb ); i < n; i++ )
+//   {
+//     b3.getContactHitEventAt( hit, eb, i );       // fills `hit` in place (out-arg first)
+//     hit.shapeIdA; hit.point; hit.normal; hit.approachSpeed;
+//   }
+//   b3.destroyEventsBuffer( eb );                   // free the wasm storage
+//
+// Tier strides come from bindings.cpp (namespace layout, via LAYOUT above); the
+// field READ order below must match the EventsBuffer packing order in src/bindings.cpp.
+
+const CONTACT_TOUCH_STRIDE = LAYOUT.contactTouch; // shapeIdA(3) shapeIdB(3) contactId(4)
+const CONTACT_HIT_STRIDE_I = LAYOUT.contactHitI32; // shapeIdA(3) shapeIdB(3) contactId(4) matA(lo,hi) matB(lo,hi)
+const CONTACT_HIT_STRIDE_F = LAYOUT.contactHitF64; //  point(3) normal(3) approachSpeed
+const BODY_MOVE_STRIDE_I = LAYOUT.bodyMoveI32; //    bodyId(3) fellAsleep
+const BODY_MOVE_STRIDE_F = LAYOUT.bodyMoveF64; //    position(3) rotation(x,y,z,w)
+const SENSOR_TOUCH_STRIDE = LAYOUT.sensorTouch; //   sensorShapeId(3) visitorShapeId(3)
+const JOINT_STRIDE = LAYOUT.joint; //          jointId(3)
+
+function readShapeId( dst, a, o )
+{
+	dst.index1 = a[ o ]; dst.world0 = a[ o + 1 ]; dst.generation = a[ o + 2 ];
+}
+function readContactId( dst, a, o )
+{
+	dst.index1 = a[ o ]; dst.world0 = a[ o + 1 ]; dst.padding = a[ o + 2 ]; dst.generation = a[ o + 3 ] >>> 0;
+}
+function readU64( a, o )
+{
+	return BigInt( a[ o ] >>> 0 ) | ( BigInt( a[ o + 1 ] >>> 0 ) << 32n );
+}
+
+function createEventsBuffer()
+{
+	return {
+		_impl: new Module.EventsBufferImpl(),
+		i32: null, f64: null, // live module HEAP views, refreshed on each getEvents
+		contactBeginCount: 0, contactBeginBase: 0,
+		contactEndCount: 0, contactEndBase: 0,
+		contactHitCount: 0, contactHitI32Base: 0, contactHitF64Base: 0,
+		bodyMoveCount: 0, bodyMoveI32Base: 0, bodyMoveF64Base: 0,
+		sensorBeginCount: 0, sensorBeginBase: 0,
+		sensorEndCount: 0, sensorEndBase: 0,
+		jointCount: 0, jointBase: 0,
+	};
+}
+
+function getEvents( eb, worldId )
+{
+	const impl = eb._impl;
+	impl.loadFrom( worldId );
+	// Re-grab HEAP views + byte->element bases (memory may have grown, vectors moved).
+	eb.i32 = HEAP32;
+	eb.f64 = HEAPF64;
+	eb.contactBeginCount = impl.contactBeginCount(); eb.contactBeginBase = impl.contactBeginPtr() >> 2;
+	eb.contactEndCount = impl.contactEndCount(); eb.contactEndBase = impl.contactEndPtr() >> 2;
+	eb.contactHitCount = impl.contactHitCount();
+	eb.contactHitI32Base = impl.contactHitI32Ptr() >> 2; eb.contactHitF64Base = impl.contactHitF64Ptr() >> 3;
+	eb.bodyMoveCount = impl.bodyMoveCount();
+	eb.bodyMoveI32Base = impl.bodyMoveI32Ptr() >> 2; eb.bodyMoveF64Base = impl.bodyMoveF64Ptr() >> 3;
+	eb.sensorBeginCount = impl.sensorBeginCount(); eb.sensorBeginBase = impl.sensorBeginPtr() >> 2;
+	eb.sensorEndCount = impl.sensorEndCount(); eb.sensorEndBase = impl.sensorEndPtr() >> 2;
+	eb.jointCount = impl.jointCount(); eb.jointBase = impl.jointPtr() >> 2;
+	return eb;
+}
+
+function destroyEventsBuffer( eb )
+{
+	eb._impl.delete();
+	eb._impl = null;
+}
+
+function getNumContactBeginEvents( eb ) { return eb.contactBeginCount; }
+function getNumContactEndEvents( eb ) { return eb.contactEndCount; }
+function getNumContactHitEvents( eb ) { return eb.contactHitCount; }
+function getNumBodyMoveEvents( eb ) { return eb.bodyMoveCount; }
+function getNumSensorBeginEvents( eb ) { return eb.sensorBeginCount; }
+function getNumSensorEndEvents( eb ) { return eb.sensorEndCount; }
+function getNumJointEvents( eb ) { return eb.jointCount; }
+
+// contact begin/end touch events: { shapeIdA, shapeIdB, contactId }
+function createContactTouchEvent()
+{
+	return {
+		shapeIdA: { index1: 0, world0: 0, generation: 0 },
+		shapeIdB: { index1: 0, world0: 0, generation: 0 },
+		contactId: { index1: 0, world0: 0, padding: 0, generation: 0 },
+	};
+}
+function readContactTouch( out, eb, i, base )
+{
+	const a = eb.i32;
+	const s = base + i * CONTACT_TOUCH_STRIDE;
+	readShapeId( out.shapeIdA, a, s );
+	readShapeId( out.shapeIdB, a, s + 3 );
+	readContactId( out.contactId, a, s + 6 );
+	return out;
+}
+function getContactBeginEventAt( out, eb, i ) { return readContactTouch( out, eb, i, eb.contactBeginBase ); }
+function getContactEndEventAt( out, eb, i ) { return readContactTouch( out, eb, i, eb.contactEndBase ); }
+
+// contact hit events
+function createContactHitEvent()
+{
+	return {
+		shapeIdA: { index1: 0, world0: 0, generation: 0 },
+		shapeIdB: { index1: 0, world0: 0, generation: 0 },
+		contactId: { index1: 0, world0: 0, padding: 0, generation: 0 },
+		point: [ 0, 0, 0 ],
+		normal: [ 0, 0, 0 ],
+		approachSpeed: 0,
+		userMaterialIdA: 0n,
+		userMaterialIdB: 0n,
+	};
+}
+function getContactHitEventAt( out, eb, i )
+{
+	const a = eb.i32;
+	const s = eb.contactHitI32Base + i * CONTACT_HIT_STRIDE_I;
+	readShapeId( out.shapeIdA, a, s );
+	readShapeId( out.shapeIdB, a, s + 3 );
+	readContactId( out.contactId, a, s + 6 );
+	out.userMaterialIdA = readU64( a, s + 10 );
+	out.userMaterialIdB = readU64( a, s + 12 );
+	const f = eb.f64;
+	const fs = eb.contactHitF64Base + i * CONTACT_HIT_STRIDE_F;
+	out.point[ 0 ] = f[ fs ]; out.point[ 1 ] = f[ fs + 1 ]; out.point[ 2 ] = f[ fs + 2 ];
+	out.normal[ 0 ] = f[ fs + 3 ]; out.normal[ 1 ] = f[ fs + 4 ]; out.normal[ 2 ] = f[ fs + 5 ];
+	out.approachSpeed = f[ fs + 6 ];
+	return out;
+}
+
+// body move events
+function createBodyMoveEvent()
+{
+	return {
+		bodyId: { index1: 0, world0: 0, generation: 0 },
+		position: [ 0, 0, 0 ],
+		rotation: [ 0, 0, 0, 1 ],
+		fellAsleep: false,
+	};
+}
+function getBodyMoveEventAt( out, eb, i )
+{
+	const a = eb.i32;
+	const s = eb.bodyMoveI32Base + i * BODY_MOVE_STRIDE_I;
+	out.bodyId.index1 = a[ s ]; out.bodyId.world0 = a[ s + 1 ]; out.bodyId.generation = a[ s + 2 ];
+	out.fellAsleep = a[ s + 3 ] !== 0;
+	const f = eb.f64;
+	const fs = eb.bodyMoveF64Base + i * BODY_MOVE_STRIDE_F;
+	out.position[ 0 ] = f[ fs ]; out.position[ 1 ] = f[ fs + 1 ]; out.position[ 2 ] = f[ fs + 2 ];
+	out.rotation[ 0 ] = f[ fs + 3 ]; out.rotation[ 1 ] = f[ fs + 4 ]; out.rotation[ 2 ] = f[ fs + 5 ]; out.rotation[ 3 ] = f[ fs + 6 ];
+	return out;
+}
+
+// sensor begin/end touch events: { sensorShapeId, visitorShapeId }
+function createSensorTouchEvent()
+{
+	return {
+		sensorShapeId: { index1: 0, world0: 0, generation: 0 },
+		visitorShapeId: { index1: 0, world0: 0, generation: 0 },
+	};
+}
+function readSensorTouch( out, eb, i, base )
+{
+	const a = eb.i32;
+	const s = base + i * SENSOR_TOUCH_STRIDE;
+	readShapeId( out.sensorShapeId, a, s );
+	readShapeId( out.visitorShapeId, a, s + 3 );
+	return out;
+}
+function getSensorBeginEventAt( out, eb, i ) { return readSensorTouch( out, eb, i, eb.sensorBeginBase ); }
+function getSensorEndEventAt( out, eb, i ) { return readSensorTouch( out, eb, i, eb.sensorEndBase ); }
+
+// joint events: { jointId }
+function createJointEvent() { return { jointId: { index1: 0, world0: 0, generation: 0 } }; }
+function getJointEventAt( out, eb, i )
+{
+	const a = eb.i32;
+	const s = eb.jointBase + i * JOINT_STRIDE;
+	out.jointId.index1 = a[ s ]; out.jointId.world0 = a[ s + 1 ]; out.jointId.generation = a[ s + 2 ];
+	return out;
+}
+
+// --- b3World_CollideMover plane results ---------------------------------------
+// The CollideMover callback receives a packed buffer { count, data: Float32Array }
+// (LAYOUT.plane floats per plane); read it with these instead of a JS array of objects.
+
+function getNumPlaneResults( buf ) { return buf.count; }
+function createPlaneResult()
+{
+	return { plane: { normal: [ 0, 0, 0 ], offset: 0 }, point: [ 0, 0, 0 ] };
+}
+function getPlaneResultAt( out, buf, i )
+{
+	const d = buf.data;
+	const s = i * LAYOUT.plane;
+	const nrm = out.plane.normal;
+	nrm[ 0 ] = d[ s ]; nrm[ 1 ] = d[ s + 1 ]; nrm[ 2 ] = d[ s + 2 ];
+	out.plane.offset = d[ s + 3 ];
+	out.point[ 0 ] = d[ s + 4 ]; out.point[ 1 ] = d[ s + 5 ]; out.point[ 2 ] = d[ s + 6 ];
+	return out;
+}
+
+// --- b3World_CastRayClosestBatch results (reusable, wasm-backed) --------------
+//
+//   const rb = b3.createRayResultBuffer();        // allocate once
+//   const hit = b3.createRayResult();             // reusable scratch, once
+//   b3.castRayClosestBatch( rb, world, origins, translations );  // after stepping
+//   for ( let i = 0, n = b3.getNumRayResults( rb ); i < n; i++ )
+//   {
+//     b3.getRayResultAt( hit, rb, i );            // fills `hit` in place
+//     hit.hit; hit.shapeId; hit.point; hit.normal; hit.fraction;
+//   }
+//   b3.destroyRayResultBuffer( rb );
+//
+// origins is a Float64Array (3 doubles per ray, b3Pos), translations a Float32Array
+// (3 floats per ray). Strides come from bindings.cpp (namespace layout, via LAYOUT);
+// the field read order below must match RayResultBuffer::cast in src/bindings.cpp.
+
+const RAY_STRIDE_I = LAYOUT.rayI32; // shapeId(3) userMaterialId(lo,hi) triangleIndex childIndex nodeVisits leafVisits hit
+const RAY_STRIDE_F = LAYOUT.rayF64; // point(3) normal(3) fraction
+
+function createRayResultBuffer()
+{
+	return {
+		_impl: new Module.RayResultBufferImpl(),
+		count: 0,
+		i32: null, i32Base: 0, // live module HEAP views; refreshed after each cast
+		f64: null, f64Base: 0,
+	};
+}
+
+function refreshRayResultBuffer( buf )
+{
+	const impl = buf._impl;
+	buf.count = impl.count();
+	buf.i32 = HEAP32; buf.i32Base = impl.i32Ptr() >> 2;
+	buf.f64 = HEAPF64; buf.f64Base = impl.f64Ptr() >> 3;
+}
+
+// Returns the number of rays cast (0 when the array lengths disagree).
+function castRayClosestBatch( buf, worldId, origins, translations )
+{
+	buf._impl.cast( worldId, origins, translations, Module.b3DefaultQueryFilter() );
+	refreshRayResultBuffer( buf );
+	return buf.count;
+}
+
+// Same, with an explicit query filter.
+function castRayClosestBatchFiltered( buf, worldId, origins, translations, filter )
+{
+	buf._impl.cast( worldId, origins, translations, filter );
+	refreshRayResultBuffer( buf );
+	return buf.count;
+}
+
+function destroyRayResultBuffer( buf )
+{
+	buf._impl.delete();
+	buf._impl = null;
+}
+
+function getNumRayResults( buf ) { return buf.count; }
+
+function createRayResult()
+{
+	return {
+		shapeId: { index1: 0, world0: 0, generation: 0 },
+		point: [ 0, 0, 0 ],
+		normal: [ 0, 0, 0 ],
+		userMaterialId: 0n,
+		fraction: 0,
+		triangleIndex: 0,
+		childIndex: 0,
+		nodeVisits: 0,
+		leafVisits: 0,
+		hit: false,
+	};
+}
+
+function getRayResultAt( out, buf, i )
+{
+	const a = buf.i32;
+	const si = ( buf.i32Base | 0 ) + i * RAY_STRIDE_I;
+	readShapeId( out.shapeId, a, si );
+	out.userMaterialId = readU64( a, si + 3 );
+	out.triangleIndex = a[ si + 5 ];
+	out.childIndex = a[ si + 6 ];
+	out.nodeVisits = a[ si + 7 ];
+	out.leafVisits = a[ si + 8 ];
+	out.hit = a[ si + 9 ] !== 0;
+	const d = buf.f64;
+	const sf = ( buf.f64Base | 0 ) + i * RAY_STRIDE_F;
+	const p = out.point, nrm = out.normal;
+	p[ 0 ] = d[ sf ]; p[ 1 ] = d[ sf + 1 ]; p[ 2 ] = d[ sf + 2 ];
+	nrm[ 0 ] = d[ sf + 3 ]; nrm[ 1 ] = d[ sf + 4 ]; nrm[ 2 ] = d[ sf + 5 ];
+	out.fraction = d[ sf + 6 ];
+	return out;
+}
+
+// --- out-param math reads (conventions documented in src/bindings.cpp header) ---
+// Each raw `b3X_GetYInto(out, ...)` writes floats to a static wasm scratch; the
+// public `b3X_GetY(out, ...) -> out` copies scratch -> the caller's mathcat array.
+//
+// The readers are GENERATED from the binding-site metadata (_outMeta(), injected at
+// build time as the OUT-META list below), so this file carries no per-method list: add
+// an out getter in bindings.cpp and it is installed automatically. Each generated reader is monomorphic + fixed-arity with
+// an unrolled copy (no arguments/slice/spread on the hot path) and does one wasm
+// crossing per read. The static scratch address is stable, so its element offsets
+// are baked in as literals; HEAPF32 is re-read each call via getF32() so the reader
+// stays correct across memory growth (which can swap the heap view).
+
+// Everything below touches the embind API on Module (b3_getMathScratch, the raw *Into
+// writers) and installs the public reader surface. In MT (pthread) builds this same
+// post-js ALSO runs inside each worker, where those embind fns are not attached to the
+// worker's Module — and workers run box3d's scheduler tasks, never the facade API. So
+// configure the public surface on the main thread only; on a pthread worker, bail.
+// (ENVIRONMENT_IS_PTHREAD is undefined in single-threaded builds — hence the typeof.)
+if ( typeof ENVIRONMENT_IS_PTHREAD === 'undefined' || !ENVIRONMENT_IS_PTHREAD )
+{
+	// Resolve the static scratch once — the address is stable — and strip the getter
+	// from the public module (it's internal plumbing). --post-js runs after embind has
+	// registered, so the raw fns are already on Module here.
+	const SCRATCH = Module.b3_getMathScratch(); // byte pointer to the static float scratch
+	const SCRATCH_F32 = SCRATCH >>> 2; //          element base into HEAPF32
+	delete Module.b3_getMathScratch;
+
+	// Live-heap accessor in factory scope: HEAPF32 is a module-scope var that memory
+	// growth may reassign, so the generated readers call this each time rather than
+	// closing over a stale view. (The readers are built with `new Function`, whose body
+	// runs in global scope and so cannot see the bare `HEAPF32` directly.)
+	const getF32 = () => HEAPF32;
+
+	// Build a reader from one _outMeta entry. `sizes` is the float count of each out
+	// slot; `trailing` the number of forwarded input args. Returns the single out for a
+	// one-out getter, or [out0, out1, ...] for a multi-out one (a transform reads as
+	// position + rotation). The copy is codegen'd unrolled per slot with literal scratch
+	// offsets — no per-call allocation or branching.
+	const makeOutParamReader = ( rawInto, sizes, trailing ) =>
+	{
+		const outs = sizes.map( ( _, i ) => `out${i}` );
+		const trail = Array.from( { length: trailing }, ( _, i ) => `a${i}` );
+		const params = [ ...outs, ...trail ].join( ', ' );
+
+		// scratch byte pointer per out slot (slots are laid out contiguously)
+		let byteOff = 0;
+		const slotPtrs = sizes.map( ( n ) => { const p = SCRATCH + byteOff; byteOff += n * 4; return p; } );
+		const intoArgs = [ ...slotPtrs, ...trail ].join( ', ' );
+
+		let elemOff = 0;
+		const copy = sizes.map( ( n, i ) =>
+		{
+			const base = SCRATCH_F32 + elemOff; elemOff += n;
+			let body = '';
+			for ( let k = 0; k < n; k++ ) body += `out${i}[${k}]=h[${base + k}];`;
+			return body;
+		} ).join( '' );
+
+		const ret = outs.length === 1 ? outs[ 0 ] : `[ ${outs.join( ', ' )} ]`;
+		return new Function( 'raw', 'getF32',
+			`return function(${params}){raw(${intoArgs});const h=getF32();${copy}return ${ret};};` )( rawInto, getF32 );
+	};
+
+	// Install a public reader per binding-site entry; capture + strip the raw `*Into`.
+	for ( const entry of __B3_OUT_META__ )
+	{
+		const rawName = entry.method + 'Into';
+		const raw = Module[ rawName ];
+		if ( !raw ) { console.warn( `box3d.js: _outMeta lists ${rawName}, but it is not on the module — skipping` ); continue; }
+		delete Module[ rawName ]; // strip the raw writer from the public surface
+		Module[ entry.method ] = makeOutParamReader( raw, entry.sizes, entry.trailing );
+	}
+
+	// Attach onto the Emscripten module object (in scope here as `Module`).
+	Object.assign( Module, {
+		getNumShapeIds, createShapeId, getShapeIdAt,
+		getNumContacts, createContact, getContactAt,
+		createPoint, createManifold, getManifoldAt,
+		createContactsBuffer, getShapeContactData, getBodyContactData, destroyContactsBuffer,
+		createEventsBuffer, getEvents, destroyEventsBuffer,
+		getNumContactBeginEvents, getNumContactEndEvents, getNumContactHitEvents,
+		getNumBodyMoveEvents, getNumSensorBeginEvents, getNumSensorEndEvents, getNumJointEvents,
+		createContactTouchEvent, getContactBeginEventAt, getContactEndEventAt,
+		createContactHitEvent, getContactHitEventAt,
+		createBodyMoveEvent, getBodyMoveEventAt,
+		createSensorTouchEvent, getSensorBeginEventAt, getSensorEndEventAt,
+		createJointEvent, getJointEventAt,
+		getNumPlaneResults, createPlaneResult, getPlaneResultAt,
+		createRayResultBuffer, destroyRayResultBuffer, castRayClosestBatch, castRayClosestBatchFiltered,
+		getNumRayResults, createRayResult, getRayResultAt,
+	} );
+}

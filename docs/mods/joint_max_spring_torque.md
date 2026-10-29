@@ -62,3 +62,10 @@ Source: `src/recording.c`, `src/replay.c`, `src/recording_ops.inl`, `src/recordi
 Caveat: upstream `b3GetRevoluteJointTorque` counts the axial impulse twice (via `rotationAxisZ` and `axis`), so
 it reports 2x the real revolute spring torque. The solver clamp is correct; the test scales by 2 for revolute.
 If upstream fixes it, update that factor.
+
+## Wasm bindings
+
+Exposed 1:1 through the embind layer (`wasm/src/bindings.cpp`): the `maxSpringTorque` field on
+`b3RevoluteJointDef` / `b3SphericalJointDef`, `b3RevoluteJoint_Set/GetMaxSpringTorque` and
+`b3SphericalJoint_Set/GetMaxSpringTorque`. `wasm/test/smoke.mjs` (`modJointSprings`) repeats the clamp checks
+against the wasm build, including the 2x revolute torque report.

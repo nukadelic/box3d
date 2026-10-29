@@ -116,7 +116,8 @@ endif()
 # objects are built with the same atomics/bulk-memory features as the executables that
 # link them, otherwise wasm-ld rejects --shared-memory. Top level only, so a FetchContent
 # consumer keeps control of its own threading model.
-if (EMSCRIPTEN AND PROJECT_IS_TOP_LEVEL)
+option(BOX3D_EMSCRIPTEN_PTHREADS "Force pthreads on all Emscripten targets (top level only)" ON)
+if (EMSCRIPTEN AND PROJECT_IS_TOP_LEVEL AND BOX3D_EMSCRIPTEN_PTHREADS)
 	set(EMSCRIPTEN_PTHREADS_COMPILER_FLAGS "-pthread -s USE_PTHREADS=1")
 	set(EMSCRIPTEN_PTHREADS_LINKER_FLAGS "${EMSCRIPTEN_PTHREADS_COMPILER_FLAGS} -s ALLOW_MEMORY_GROWTH")
 	string(APPEND CMAKE_C_FLAGS " ${EMSCRIPTEN_PTHREADS_COMPILER_FLAGS}")

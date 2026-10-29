@@ -51,3 +51,10 @@ ragdoll. A spring that lifts the foot behaves the other way: stiffer joints foll
 
 - Not stored in world snapshots or recordings; replays use the defaults.
 - Upstream merge risks: stage count/advance arithmetic in `src/solver.c`, `b3PrepareJoint`.
+
+## Wasm bindings
+
+`b3WorldDef::{jointHertz, jointDampingRatio, jointRelaxIterations, solveJointsAfterContacts}` are fields of the
+bound `b3WorldDef` value object, so they are set before `b3CreateWorld` and cannot be changed afterwards (the C API
+has no `b3World_Set*` for them). `wasm/test/smoke.mjs` (`modWorldTuning`) builds a world with all four set and
+checks a jointed body resting on the ground stays finite and settled.

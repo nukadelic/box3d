@@ -66,3 +66,10 @@ The motor row is not directly checked for the drop (the test motor is torque-sat
 
 `b3JointDef` layout, recording version and joint base serialization, the spring and motor lines of
 `b3SolveRevoluteJoint`, and the `rotationMass` computation in the spherical prepare.
+
+## Wasm bindings
+
+`b3JointDef::armature` is a field of the bound `b3JointDef` value object (`wasm/src/bindings.cpp`), so it is set
+through `def.base.armature` on any derived joint def. There is no C getter, so the wasm layer has none either;
+`wasm/test/smoke.mjs` (`modJointSprings`) checks the effect instead (a non-zero armature shrinks the spring
+impulse for both revolute and spherical joints).

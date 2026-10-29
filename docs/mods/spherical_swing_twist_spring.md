@@ -54,3 +54,11 @@ The def serialisation gains the five fields after `targetRotation` (def size 184
 - Flag off: bit-identical to the old spring, whatever the new fields hold.
 - Equal hertz on both parts matches the single spring within 1e-3 (cube inertia is isotropic).
 - Accessors round trip.
+
+## Wasm bindings
+
+Fields `enableSwingTwistSpring`, `swingHertz`, `swingDampingRatio`, `twistHertz`, `twistDampingRatio` are on the
+bound `b3SphericalJointDef`, plus `b3SphericalJoint_EnableSwingTwistSpring`,
+`b3SphericalJoint_IsSwingTwistSpringEnabled` and the `Set/Get{Swing,Twist}Spring{Hertz,DampingRatio}` pairs
+(`wasm/src/bindings.cpp`). `wasm/test/smoke.mjs` (`modJointSprings`) covers the def copy, the setter round-trips,
+the enable flag and a stepped scene.
