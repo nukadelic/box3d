@@ -6,6 +6,8 @@
 #include "box3d/box3d.h"
 #include "box3d/math_functions.h"
 
+#include <string.h>
+
 // One sub-test per joint type. Each creates the joint, exercises the shared
 // b3Joint_* API plus every type-specific accessor, then steps to make sure the
 // joint solves without tripping a validation assert.
@@ -777,6 +779,112 @@ static int TestNonDynamicJointDisable( void )
 	return 0;
 }
 
+// Spring clamp tests. Gravity is off so the spring is the only axial torque.
+// Returns the peak absolute constraint torque component and the final body rotation.
+static float RunSpringClampScenario( bool spherical, float maxSpringTorque, bool useSetter, b3Quat* finalRotation )
+{
+	JointFixture f = CreateJointFixture();
+	b3JointId jointId;
+	if ( spherical )
+	{
+		b3SphericalJointDef def = b3DefaultSphericalJointDef();
+		SetCommonFrames( &def.base, &f );
+		def.enableSpring = true;
+		def.hertz = 5.0f;
+		def.dampingRatio = 0.5f;
+		def.targetRotation = b3MakeQuatFromAxisAngle( b3Normalize( ( b3Vec3 ){ 1.0f, 1.0f, 1.0f } ), 1.0f );
+		def.maxSpringTorque = useSetter ? 0.0f : maxSpringTorque;
+		jointId = b3CreateSphericalJoint( f.worldId, &def );
+		if ( useSetter )
+		{
+			b3SphericalJoint_SetMaxSpringTorque( jointId, maxSpringTorque );
+		}
+	}
+	else
+	{
+		b3RevoluteJointDef def = b3DefaultRevoluteJointDef();
+		SetCommonFrames( &def.base, &f );
+		def.enableSpring = true;
+		def.hertz = 5.0f;
+		def.dampingRatio = 0.5f;
+		def.targetAngle = 1.0f;
+		def.maxSpringTorque = useSetter ? 0.0f : maxSpringTorque;
+		jointId = b3CreateRevoluteJoint( f.worldId, &def );
+		if ( useSetter )
+		{
+			b3RevoluteJoint_SetMaxSpringTorque( jointId, maxSpringTorque );
+		}
+	}
+
+	float peak = 0.0f;
+	for ( int i = 0; i < 120; ++i )
+	{
+		b3World_Step( f.worldId, 1.0f / 60.0f, 4 );
+		b3Vec3 t = b3Joint_GetConstraintTorque( jointId );
+		peak = b3MaxFloat( peak, b3MaxFloat( b3AbsFloat( t.x ), b3MaxFloat( b3AbsFloat( t.y ), b3AbsFloat( t.z ) ) ) );
+	}
+
+	*finalRotation = b3Body_GetRotation( f.bodyId );
+	b3DestroyWorld( f.worldId );
+	return peak;
+}
+
+static int TestSpringTorqueClamp( void )
+{
+	for ( int spherical = 0; spherical < 2; ++spherical )
+	{
+		b3Quat q0, q1, q2, q3, q4;
+		float unclamped = RunSpringClampScenario( spherical, 0.0f, false, &q0 );
+
+		// small clamp: never exceeded, and it actually bites
+		float clamp = 0.01f * unclamped;
+		ENSURE( unclamped > 0.0f );
+		float clamped = RunSpringClampScenario( spherical, clamp, false, &q1 );
+		// b3GetRevoluteJointTorque adds the axial impulse twice (rotationAxisZ and axis), so it reports 2x the spring torque
+		float reportScale = spherical ? 1.0f : 2.0f;
+		ENSURE( clamped <= reportScale * clamp * 1.001f );
+		ENSURE( clamped > 0.5f * reportScale * clamp );
+		ENSURE( q1.v.x != q0.v.x || q1.v.y != q0.v.y || q1.v.z != q0.v.z || q1.s != q0.s );
+
+		// setter path behaves like the definition field
+		float viaSetter = RunSpringClampScenario( spherical, clamp, true, &q2 );
+		ENSURE( viaSetter == clamped );
+		ENSURE( memcmp( &q1, &q2, sizeof( b3Quat ) ) == 0 );
+
+		// zero is unclamped: identical to the default definition and to a clamp that never engages
+		float unclamped2 = RunSpringClampScenario( spherical, 0.0f, true, &q3 );
+		ENSURE( unclamped2 == unclamped );
+		ENSURE( memcmp( &q0, &q3, sizeof( b3Quat ) ) == 0 );
+		float huge = RunSpringClampScenario( spherical, 1.0e9f, false, &q4 );
+		ENSURE( huge == unclamped );
+		ENSURE( memcmp( &q0, &q4, sizeof( b3Quat ) ) == 0 );
+	}
+
+	// getters
+	JointFixture f = CreateJointFixture();
+	b3RevoluteJointDef rd = b3DefaultRevoluteJointDef();
+	SetCommonFrames( &rd.base, &f );
+	b3JointId rj = b3CreateRevoluteJoint( f.worldId, &rd );
+	ENSURE( b3RevoluteJoint_GetMaxSpringTorque( rj ) == 0.0f );
+	b3RevoluteJoint_SetMaxSpringTorque( rj, 12.0f );
+	ENSURE( b3RevoluteJoint_GetMaxSpringTorque( rj ) == 12.0f );
+	b3RevoluteJoint_SetMaxSpringTorque( rj, -1.0f );
+	ENSURE( b3RevoluteJoint_GetMaxSpringTorque( rj ) == 0.0f );
+	b3DestroyWorld( f.worldId );
+
+	f = CreateJointFixture();
+	b3SphericalJointDef sd = b3DefaultSphericalJointDef();
+	SetCommonFrames( &sd.base, &f );
+	b3JointId sj = b3CreateSphericalJoint( f.worldId, &sd );
+	ENSURE( b3SphericalJoint_GetMaxSpringTorque( sj ) == 0.0f );
+	b3SphericalJoint_SetMaxSpringTorque( sj, 12.0f );
+	ENSURE( b3SphericalJoint_GetMaxSpringTorque( sj ) == 12.0f );
+	b3DestroyWorld( f.worldId );
+
+	return 0;
+}
+
+
 int JointTest( void )
 {
 	RUN_SUBTEST( TestParallelJoint );
@@ -788,6 +896,7 @@ int JointTest( void )
 	RUN_SUBTEST( TestPrismaticJoint );
 	RUN_SUBTEST( TestRevoluteJoint );
 	RUN_SUBTEST( TestSphericalJoint );
+	RUN_SUBTEST( TestSpringTorqueClamp );
 	RUN_SUBTEST( TestWeldJoint );
 	RUN_SUBTEST( TestWheelJoint );
 	RUN_SUBTEST( TestCreateJointClearsContacts );

@@ -1679,6 +1679,12 @@ B3_API float b3RevoluteJoint_GetMotorTorque( b3JointId jointId );
 /// Set the revolute joint maximum motor torque, usually in newton-meters
 B3_API void b3RevoluteJoint_SetMaxMotorTorque( b3JointId jointId, float torque );
 
+/// Set the maximum spring torque, typically in newton-meters. Zero means unclamped.
+B3_API void b3RevoluteJoint_SetMaxSpringTorque( b3JointId jointId, float maxTorque );
+
+/// Get the maximum spring torque, typically in newton-meters.
+B3_API float b3RevoluteJoint_GetMaxSpringTorque( b3JointId jointId );
+
 /// Get the revolute joint maximum motor torque, usually in newton-meters
 B3_API float b3RevoluteJoint_GetMaxMotorTorque( b3JointId jointId );
 
@@ -1774,6 +1780,12 @@ B3_API b3Vec3 b3SphericalJoint_GetMotorTorque( b3JointId jointId );
 
 /// Set the spherical joint maximum motor torque, usually in newton-meters
 B3_API void b3SphericalJoint_SetMaxMotorTorque( b3JointId jointId, float torque );
+
+/// Set the maximum spring torque, typically in newton-meters. Zero means unclamped.
+B3_API void b3SphericalJoint_SetMaxSpringTorque( b3JointId jointId, float maxTorque );
+
+/// Get the maximum spring torque, typically in newton-meters.
+B3_API float b3SphericalJoint_GetMaxSpringTorque( b3JointId jointId );
 
 /// Get the spherical joint maximum motor torque, usually in newton-meters
 B3_API float b3SphericalJoint_GetMaxMotorTorque( b3JointId jointId );

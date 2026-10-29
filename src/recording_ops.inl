@@ -173,6 +173,7 @@ B3_REC_OP( 0xC6, RevoluteJointSetLimits, RET_NONE, ARG( JOINTID, joint ) ARG( F3
 B3_REC_OP( 0xC7, RevoluteJointEnableMotor, RET_NONE, ARG( JOINTID, joint ) ARG( BOOL, enableMotor ) )
 B3_REC_OP( 0xC8, RevoluteJointSetMotorSpeed, RET_NONE, ARG( JOINTID, joint ) ARG( F32, motorSpeed ) )
 B3_REC_OP( 0xC9, RevoluteJointSetMaxMotorTorque, RET_NONE, ARG( JOINTID, joint ) ARG( F32, torque ) )
+B3_REC_OP( 0xF3, RevoluteJointSetMaxSpringTorque, RET_NONE, ARG( JOINTID, joint ) ARG( F32, maxTorque ) )
 
 // Spherical joint
 B3_REC_OP( 0xCA, SphericalJointEnableConeLimit, RET_NONE, ARG( JOINTID, joint ) ARG( BOOL, enableLimit ) )
@@ -186,6 +187,7 @@ B3_REC_OP( 0xD1, SphericalJointSetTargetRotation, RET_NONE, ARG( JOINTID, joint 
 B3_REC_OP( 0xD2, SphericalJointEnableMotor, RET_NONE, ARG( JOINTID, joint ) ARG( BOOL, enableMotor ) )
 B3_REC_OP( 0xD3, SphericalJointSetMotorVelocity, RET_NONE, ARG( JOINTID, joint ) ARG( VEC3, motorVelocity ) )
 B3_REC_OP( 0xD4, SphericalJointSetMaxMotorTorque, RET_NONE, ARG( JOINTID, joint ) ARG( F32, torque ) )
+B3_REC_OP( 0xF4, SphericalJointSetMaxSpringTorque, RET_NONE, ARG( JOINTID, joint ) ARG( F32, maxTorque ) )
 
 // Weld joint
 B3_REC_OP( 0xD5, WeldJointSetLinearHertz, RET_NONE, ARG( JOINTID, joint ) ARG( F32, hertz ) )

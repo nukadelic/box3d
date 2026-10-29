@@ -952,6 +952,10 @@ typedef struct b3RevoluteJointDef
 	/// The spring damping ratio, non-dimensional.
 	float dampingRatio;
 
+	/// The maximum spring torque, typically in newton-meters. Non-negative number.
+	/// Zero means the spring torque is unclamped.
+	float maxSpringTorque;
+
 	/// A flag to enable joint limits.
 	bool enableLimit;
 
@@ -992,6 +996,10 @@ typedef struct b3SphericalJointDef
 
 	/// The spring damping ratio, non-dimensional. Non-negative number.
 	float dampingRatio;
+
+	/// The maximum spring torque, typically in newton-meters. Non-negative number.
+	/// Zero means the spring torque is unclamped.
+	float maxSpringTorque;
 
 	/// Target spring rotation, joint frame B relative to joint frame A.
 	b3Quat targetRotation;

@@ -586,6 +586,7 @@ b3RevoluteJointDef b3RecR_REVOLUTEJOINTDEF( b3RecReader* rdr )
 	def.enableSpring = b3RecR_BOOL( rdr );
 	def.hertz = b3RecR_F32( rdr );
 	def.dampingRatio = b3RecR_F32( rdr );
+	def.maxSpringTorque = b3RecR_F32( rdr );
 	def.enableLimit = b3RecR_BOOL( rdr );
 	def.lowerAngle = b3RecR_F32( rdr );
 	def.upperAngle = b3RecR_F32( rdr );
@@ -602,6 +603,7 @@ b3SphericalJointDef b3RecR_SPHERICALJOINTDEF( b3RecReader* rdr )
 	def.enableSpring = b3RecR_BOOL( rdr );
 	def.hertz = b3RecR_F32( rdr );
 	def.dampingRatio = b3RecR_F32( rdr );
+	def.maxSpringTorque = b3RecR_F32( rdr );
 	def.targetRotation = b3RecR_QUAT( rdr );
 	def.enableConeLimit = b3RecR_BOOL( rdr );
 	def.coneAngle = b3RecR_F32( rdr );
@@ -1515,6 +1517,11 @@ static void b3RecDispatch_RevoluteJointEnableSpring( const b3RecArgs_RevoluteJoi
 	b3RevoluteJoint_EnableSpring( b3RecMakeJointId( rdr, a->joint ), a->enableSpring );
 }
 
+static void b3RecDispatch_RevoluteJointSetMaxSpringTorque( const b3RecArgs_RevoluteJointSetMaxSpringTorque* a, b3RecReader* rdr )
+{
+	b3RevoluteJoint_SetMaxSpringTorque( b3RecMakeJointId( rdr, a->joint ), a->maxTorque );
+}
+
 static void b3RecDispatch_RevoluteJointSetSpringHertz( const b3RecArgs_RevoluteJointSetSpringHertz* a, b3RecReader* rdr )
 {
 	b3RevoluteJoint_SetSpringHertz( b3RecMakeJointId( rdr, a->joint ), a->hertz );
@@ -1579,6 +1586,11 @@ static void b3RecDispatch_SphericalJointSetTwistLimits( const b3RecArgs_Spherica
 static void b3RecDispatch_SphericalJointEnableSpring( const b3RecArgs_SphericalJointEnableSpring* a, b3RecReader* rdr )
 {
 	b3SphericalJoint_EnableSpring( b3RecMakeJointId( rdr, a->joint ), a->enableSpring );
+}
+
+static void b3RecDispatch_SphericalJointSetMaxSpringTorque( const b3RecArgs_SphericalJointSetMaxSpringTorque* a, b3RecReader* rdr )
+{
+	b3SphericalJoint_SetMaxSpringTorque( b3RecMakeJointId( rdr, a->joint ), a->maxTorque );
 }
 
 static void b3RecDispatch_SphericalJointSetSpringHertz( const b3RecArgs_SphericalJointSetSpringHertz* a, b3RecReader* rdr )

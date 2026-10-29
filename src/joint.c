@@ -691,6 +691,7 @@ b3JointId b3CreateRevoluteJoint( b3WorldId worldId, const b3RevoluteJointDef* de
 	joint->revoluteJoint.maxMotorTorque = def->maxMotorTorque;
 	joint->revoluteJoint.motorSpeed = def->motorSpeed;
 	joint->revoluteJoint.enableSpring = def->enableSpring;
+	joint->revoluteJoint.maxSpringTorque = b3MaxFloat( 0.0f, def->maxSpringTorque );
 	joint->revoluteJoint.enableLimit = def->enableLimit;
 	joint->revoluteJoint.enableMotor = def->enableMotor;
 
@@ -731,6 +732,7 @@ b3JointId b3CreateSphericalJoint( b3WorldId worldId, const b3SphericalJointDef* 
 	joint->sphericalJoint.maxMotorTorque = def->maxMotorTorque;
 	joint->sphericalJoint.motorVelocity = def->motorVelocity;
 	joint->sphericalJoint.enableSpring = def->enableSpring;
+	joint->sphericalJoint.maxSpringTorque = b3MaxFloat( 0.0f, def->maxSpringTorque );
 	joint->sphericalJoint.enableConeLimit = def->enableConeLimit;
 	joint->sphericalJoint.enableTwistLimit = def->enableTwistLimit;
 	joint->sphericalJoint.enableMotor = def->enableMotor;

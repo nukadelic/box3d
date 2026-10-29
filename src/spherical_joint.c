@@ -145,6 +145,20 @@ void b3SphericalJoint_EnableSpring( b3JointId jointId, bool enableSpring )
 	base->sphericalJoint.enableSpring = enableSpring;
 }
 
+void b3SphericalJoint_SetMaxSpringTorque( b3JointId jointId, float maxTorque )
+{
+	b3World* world = b3GetWorld( jointId.world0 );
+	B3_REC( world, SphericalJointSetMaxSpringTorque, jointId, maxTorque );
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_sphericalJoint );
+	base->sphericalJoint.maxSpringTorque = b3MaxFloat( 0.0f, maxTorque );
+}
+
+float b3SphericalJoint_GetMaxSpringTorque( b3JointId jointId )
+{
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_sphericalJoint );
+	return base->sphericalJoint.maxSpringTorque;
+}
+
 bool b3SphericalJoint_IsSpringEnabled( b3JointId jointId )
 {
 	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_sphericalJoint );
@@ -474,7 +488,24 @@ void b3SolveSphericalJoint( b3JointSim* base, b3StepContext* context, bool useBi
 
 			b3Vec3 impulse = b3MulSub( b3MulSV( -massScale, b3MulMV( joint->rotationMass, b3Add( cdot, bias ) ) ),
 									   impulseScale, joint->springImpulse );
-			joint->springImpulse = b3Add( joint->springImpulse, impulse );
+			b3Vec3 oldImpulse = joint->springImpulse;
+			joint->springImpulse = b3Add( oldImpulse, impulse );
+			if ( joint->maxSpringTorque > 0.0f )
+			{
+				// per-axis clamp
+				float maxImpulse = context->h * joint->maxSpringTorque;
+				b3Vec3 clamped = {
+					b3ClampFloat( joint->springImpulse.x, -maxImpulse, maxImpulse ),
+					b3ClampFloat( joint->springImpulse.y, -maxImpulse, maxImpulse ),
+					b3ClampFloat( joint->springImpulse.z, -maxImpulse, maxImpulse ),
+				};
+				if ( clamped.x != joint->springImpulse.x || clamped.y != joint->springImpulse.y ||
+					 clamped.z != joint->springImpulse.z )
+				{
+					joint->springImpulse = clamped;
+					impulse = b3Sub( clamped, oldImpulse );
+				}
+			}
 
 			cdot = b3Add( cdot, b3MulMV( invInertiaSum, impulse ) );
 			angularImpulse = b3Add( angularImpulse, impulse );
