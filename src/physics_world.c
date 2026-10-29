@@ -3147,6 +3147,86 @@ b3RayResult b3World_CastRayClosest( b3WorldId worldId, b3Pos origin, b3Vec3 tran
 	return result;
 }
 
+typedef struct WorldRayBatchContext
+{
+	b3World* world;
+	const b3Pos* origins;
+	const b3Vec3* translations;
+	b3QueryFilter filter;
+	b3RayResult* results;
+} WorldRayBatchContext;
+
+// One worker's slice of a b3World_CastRayClosestBatch call. Body mirrors b3World_CastRayClosest,
+// minus the per-call world-id lookup and recording. box3d queries are read-only, so all workers
+// traverse the same broadphase trees concurrently without synchronisation.
+static void b3RayBatchTask( int startIndex, int endIndex, int workerIndex, void* context )
+{
+	B3_UNUSED( workerIndex );
+	WorldRayBatchContext* batch = (WorldRayBatchContext*)context;
+	b3World* world = batch->world;
+
+	for ( int i = startIndex; i < endIndex; ++i )
+	{
+		b3Pos origin = batch->origins[i];
+		b3RayResult result = { 0 };
+		b3RayCastInput input = { b3ToVec3( origin ), batch->translations[i], 1.0f };
+		WorldRayCastContext worldContext = {
+			.world = world,
+			.fcn = b3RayCastClosestFcn,
+			.filter = batch->filter,
+			.fraction = 1.0f,
+			.origin = origin,
+			.userContext = &result,
+		};
+
+		for ( int t = 0; t < b3_bodyTypeCount; ++t )
+		{
+			b3TreeStats treeResult = b3DynamicTree_RayCast( world->broadPhase.trees + t, &input, batch->filter.maskBits, false,
+														   RayCastCallback, &worldContext );
+			result.nodeVisits += treeResult.nodeVisits;
+			result.leafVisits += treeResult.leafVisits;
+
+			if ( worldContext.fraction == 0.0f )
+			{
+				break;
+			}
+
+			input.maxFraction = worldContext.fraction;
+		}
+
+		batch->results[i] = result;
+	}
+}
+
+// Closest-hit ray cast for a whole array of rays in one call. Splits the work across the world's
+// own worker threads (b3ParallelFor). Equivalent to calling b3World_CastRayClosest count times,
+// but pays the world-id lookup and the managed/native boundary once instead of per ray.
+// origins, translations and results must all point to count elements. No recording support.
+B3_API void b3World_CastRayClosestBatch( b3WorldId worldId, const b3Pos* origins, const b3Vec3* translations, int count,
+										b3QueryFilter filter, b3RayResult* results )
+{
+	if ( count <= 0 || origins == NULL || translations == NULL || results == NULL )
+	{
+		return;
+	}
+
+	b3World* world = b3GetUnlockedWorldFromId( worldId );
+	if ( world == NULL )
+	{
+		return;
+	}
+
+	WorldRayBatchContext batch = {
+		.world = world,
+		.origins = origins,
+		.translations = translations,
+		.filter = filter,
+		.results = results,
+	};
+
+	b3ParallelFor( world, b3RayBatchTask, count, 32, &batch, "castRayBatch" );
+}
+
 typedef struct WorldShapeCastContext
 {
 	b3World* world;

@@ -2,4 +2,6 @@
 
 > Disclaimer: the code in this repo is, or will be, written by AI.
 
-[![Introducing Box3D](https://img.youtube.com/vi/jr_Fzl2XwKU/maxresdefault.jpg)](https://www.youtube.com/watch?v=jr_Fzl2XwKU)
+## Added
+
+- `b3World_CastRayClosestBatch`: closest-hit ray casts for an array of rays in one call, parallelized across the world's worker threads.

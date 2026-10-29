@@ -109,6 +109,13 @@ B3_API b3TreeStats b3World_CastRay( b3WorldId worldId, b3Pos origin, b3Vec3 tran
 B3_API b3RayResult b3World_CastRayClosest( b3WorldId worldId, b3Pos origin, b3Vec3 translation,
 										   b3QueryFilter filter );
 
+/// Closest-hit ray cast for a whole array of rays in one call. Splits the work across the world's
+/// worker threads. Equivalent to calling b3World_CastRayClosest() count times, but pays the
+/// world lookup and native-boundary cost once. origins, translations and results must each point
+/// to count elements. Ignores initial overlap. No recording support.
+B3_API void b3World_CastRayClosestBatch( b3WorldId worldId, const b3Pos* origins, const b3Vec3* translations, int count,
+										b3QueryFilter filter, b3RayResult* results );
+
 /// Cast a shape through the world. Similar to a cast ray except that a shape is cast instead of a
 /// point. The proxy points are relative to the origin and the hit points come back as world
 /// positions, so the cast stays precise far from the world origin. Ignores back-side collision on
