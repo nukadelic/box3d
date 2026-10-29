@@ -1761,6 +1761,37 @@ B3_API void b3SphericalJoint_SetTargetRotation( b3JointId jointId, b3Quat target
 /// Get the spherical joint spring target rotation
 B3_API b3Quat b3SphericalJoint_GetTargetRotation( b3JointId jointId );
 
+// nukabox3d: swing/twist spring, see b3SphericalJointDef
+/// Enable/disable the separate swing and twist springs
+B3_API void b3SphericalJoint_EnableSwingTwistSpring( b3JointId jointId, bool enableSpring );
+
+/// Are the swing and twist springs enabled?
+B3_API bool b3SphericalJoint_IsSwingTwistSpringEnabled( b3JointId jointId );
+
+/// Set the swing spring stiffness in Hertz
+B3_API void b3SphericalJoint_SetSwingSpringHertz( b3JointId jointId, float hertz );
+
+/// Get the swing spring stiffness in Hertz
+B3_API float b3SphericalJoint_GetSwingSpringHertz( b3JointId jointId );
+
+/// Set the swing spring damping ratio, non-dimensional
+B3_API void b3SphericalJoint_SetSwingSpringDampingRatio( b3JointId jointId, float dampingRatio );
+
+/// Get the swing spring damping ratio, non-dimensional
+B3_API float b3SphericalJoint_GetSwingSpringDampingRatio( b3JointId jointId );
+
+/// Set the twist spring stiffness in Hertz
+B3_API void b3SphericalJoint_SetTwistSpringHertz( b3JointId jointId, float hertz );
+
+/// Get the twist spring stiffness in Hertz
+B3_API float b3SphericalJoint_GetTwistSpringHertz( b3JointId jointId );
+
+/// Set the twist spring damping ratio, non-dimensional
+B3_API void b3SphericalJoint_SetTwistSpringDampingRatio( b3JointId jointId, float dampingRatio );
+
+/// Get the twist spring damping ratio, non-dimensional
+B3_API float b3SphericalJoint_GetTwistSpringDampingRatio( b3JointId jointId );
+
 /// Enable/disable a spherical joint motor
 B3_API void b3SphericalJoint_EnableMotor( b3JointId jointId, bool enableMotor );
 

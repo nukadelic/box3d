@@ -188,6 +188,11 @@ B3_REC_OP( 0xD2, SphericalJointEnableMotor, RET_NONE, ARG( JOINTID, joint ) ARG(
 B3_REC_OP( 0xD3, SphericalJointSetMotorVelocity, RET_NONE, ARG( JOINTID, joint ) ARG( VEC3, motorVelocity ) )
 B3_REC_OP( 0xD4, SphericalJointSetMaxMotorTorque, RET_NONE, ARG( JOINTID, joint ) ARG( F32, torque ) )
 B3_REC_OP( 0xF4, SphericalJointSetMaxSpringTorque, RET_NONE, ARG( JOINTID, joint ) ARG( F32, maxTorque ) )
+B3_REC_OP( 0xF5, SphericalJointEnableSwingTwistSpring, RET_NONE, ARG( JOINTID, joint ) ARG( BOOL, enableSpring ) )
+B3_REC_OP( 0xF6, SphericalJointSetSwingSpringHertz, RET_NONE, ARG( JOINTID, joint ) ARG( F32, hertz ) )
+B3_REC_OP( 0xF7, SphericalJointSetSwingSpringDampingRatio, RET_NONE, ARG( JOINTID, joint ) ARG( F32, dampingRatio ) )
+B3_REC_OP( 0xF8, SphericalJointSetTwistSpringHertz, RET_NONE, ARG( JOINTID, joint ) ARG( F32, hertz ) )
+B3_REC_OP( 0xF9, SphericalJointSetTwistSpringDampingRatio, RET_NONE, ARG( JOINTID, joint ) ARG( F32, dampingRatio ) )
 
 // Weld joint
 B3_REC_OP( 0xD5, WeldJointSetLinearHertz, RET_NONE, ARG( JOINTID, joint ) ARG( F32, hertz ) )

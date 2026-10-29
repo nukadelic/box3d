@@ -270,6 +270,16 @@ typedef struct b3SphericalJoint
 	float twistMass;
 	b3Softness springSoftness;
 
+	// nukabox3d: swing/twist spring. springImpulse holds the swing impulse in this mode.
+	b3Vec3 twistSpringImpulse;
+	float swingHertz;
+	float swingDampingRatio;
+	float twistHertz;
+	float twistDampingRatio;
+	b3Softness swingSoftness;
+	b3Softness twistSoftness;
+	bool enableSwingTwistSpring;
+
 	bool enableSpring;
 	bool enableMotor;
 	bool enableConeLimit;

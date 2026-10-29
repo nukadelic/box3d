@@ -885,6 +885,103 @@ static int TestSpringTorqueClamp( void )
 }
 
 
+// nukabox3d: swing/twist spring. The body starts with a rotation error and relaxes toward identity.
+// mode 0 = single spring, 1 = swing/twist spring, 2 = swing/twist fields set but disabled.
+// kind 0 = twist error about z, 1 = swing error about x. Returns the residual angle after a fixed time.
+static float RunSwingTwistScenario( int mode, int kind, float swingHertz, float twistHertz, float singleHertz )
+{
+	JointFixture f = CreateJointFixture();
+
+	b3SphericalJointDef def = b3DefaultSphericalJointDef();
+	SetCommonFrames( &def.base, &f );
+	if ( mode == 0 )
+	{
+		def.enableSpring = true;
+		def.hertz = singleHertz;
+		def.dampingRatio = 1.0f;
+	}
+	else
+	{
+		def.enableSwingTwistSpring = mode == 1;
+		def.swingHertz = swingHertz;
+		def.swingDampingRatio = 1.0f;
+		def.twistHertz = twistHertz;
+		def.twistDampingRatio = 1.0f;
+	}
+	b3JointId jointId = b3CreateSphericalJoint( f.worldId, &def );
+
+	b3Vec3 axis = kind == 0 ? b3Vec3_axisZ : b3Vec3_axisX;
+	b3Body_SetTransform( f.bodyId, (b3Pos){ 0.0f, 4.0f, 0.0f }, b3MakeQuatFromAxisAngle( axis, 0.8f ) );
+
+	for ( int i = 0; i < 30; ++i )
+	{
+		b3World_Step( f.worldId, 1.0f / 60.0f, 4 );
+	}
+
+	float residual = kind == 0 ? fabsf( b3SphericalJoint_GetTwistAngle( jointId ) ) : b3SphericalJoint_GetConeAngle( jointId );
+	b3DestroyWorld( f.worldId );
+	return residual;
+}
+
+static int TestSwingTwistSpring( void )
+{
+	// stiff twist, soft swing: the twist error decays much faster than the swing error
+	float twist = RunSwingTwistScenario( 1, 0, 0.5f, 6.0f, 0.0f );
+	float swing = RunSwingTwistScenario( 1, 1, 0.5f, 6.0f, 0.0f );
+	ENSURE( twist < 0.1f * swing );
+	ENSURE( swing > 0.1f && swing < 0.8f );
+
+	// and the other way round
+	twist = RunSwingTwistScenario( 1, 0, 6.0f, 0.5f, 0.0f );
+	swing = RunSwingTwistScenario( 1, 1, 6.0f, 0.5f, 0.0f );
+	ENSURE( swing < 0.1f * twist );
+	ENSURE( twist > 0.1f && twist < 0.8f );
+
+	// the parts are decoupled: the other hertz does not change a pure twist or pure swing error
+	float twistA = RunSwingTwistScenario( 1, 0, 0.5f, 3.0f, 0.0f );
+	float twistB = RunSwingTwistScenario( 1, 0, 8.0f, 3.0f, 0.0f );
+	ENSURE( fabsf( twistA - twistB ) < 1.0e-3f );
+	float swingA = RunSwingTwistScenario( 1, 1, 3.0f, 0.5f, 0.0f );
+	float swingB = RunSwingTwistScenario( 1, 1, 3.0f, 8.0f, 0.0f );
+	ENSURE( fabsf( swingA - swingB ) < 1.0e-3f );
+
+	// disabled: bit-identical to the old single spring, whatever the swing/twist fields hold
+	for ( int kind = 0; kind < 2; ++kind )
+	{
+		float old = RunSwingTwistScenario( 0, kind, 0.0f, 0.0f, 3.0f );
+		ENSURE( old > 0.0f );
+		float off = RunSwingTwistScenario( 2, kind, 9.0f, 1.0f, 0.0f );
+		float offSpringOnly = RunSwingTwistScenario( 0, kind, 9.0f, 1.0f, 3.0f );
+		ENSURE( off != old ); // off has no spring at all (enableSpring false), so the body does not move back
+		ENSURE( offSpringOnly == old );
+
+		// equal hertz on both parts reproduces the single spring (cube inertia is isotropic)
+		float equal = RunSwingTwistScenario( 1, kind, 3.0f, 3.0f, 0.0f );
+		ENSURE( fabsf( equal - old ) < 1.0e-3f );
+	}
+
+	// accessors
+	JointFixture f = CreateJointFixture();
+	b3SphericalJointDef def = b3DefaultSphericalJointDef();
+	SetCommonFrames( &def.base, &f );
+	b3JointId jointId = b3CreateSphericalJoint( f.worldId, &def );
+	ENSURE( b3SphericalJoint_IsSwingTwistSpringEnabled( jointId ) == false );
+	ENSURE( b3SphericalJoint_GetSwingSpringHertz( jointId ) == 0.0f );
+	b3SphericalJoint_EnableSwingTwistSpring( jointId, true );
+	b3SphericalJoint_SetSwingSpringHertz( jointId, 1.5f );
+	b3SphericalJoint_SetSwingSpringDampingRatio( jointId, 0.5f );
+	b3SphericalJoint_SetTwistSpringHertz( jointId, 2.5f );
+	b3SphericalJoint_SetTwistSpringDampingRatio( jointId, 0.25f );
+	ENSURE( b3SphericalJoint_IsSwingTwistSpringEnabled( jointId ) == true );
+	ENSURE( b3SphericalJoint_GetSwingSpringHertz( jointId ) == 1.5f );
+	ENSURE( b3SphericalJoint_GetSwingSpringDampingRatio( jointId ) == 0.5f );
+	ENSURE( b3SphericalJoint_GetTwistSpringHertz( jointId ) == 2.5f );
+	ENSURE( b3SphericalJoint_GetTwistSpringDampingRatio( jointId ) == 0.25f );
+	b3DestroyWorld( f.worldId );
+
+	return 0;
+}
+
 // Two free bodies joined by a motor driven revolute or spherical joint. Returns the relative angular speed after a few steps.
 static float RunArmatureScenario( bool spherical, float armature, bool setField, b3Quat* finalRotation )
 {
@@ -1039,6 +1136,7 @@ int JointTest( void )
 	RUN_SUBTEST( TestRevoluteJoint );
 	RUN_SUBTEST( TestSphericalJoint );
 	RUN_SUBTEST( TestSpringTorqueClamp );
+	RUN_SUBTEST( TestSwingTwistSpring );
 	RUN_SUBTEST( TestArmature );
 	RUN_SUBTEST( TestWeldJoint );
 	RUN_SUBTEST( TestWheelJoint );

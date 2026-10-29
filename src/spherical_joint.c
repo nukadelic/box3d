@@ -210,6 +210,86 @@ float b3SphericalJoint_GetSpringDampingRatio( b3JointId jointId )
 	return base->sphericalJoint.dampingRatio;
 }
 
+// nukabox3d: swing/twist spring
+void b3SphericalJoint_EnableSwingTwistSpring( b3JointId jointId, bool enableSpring )
+{
+	b3World* world = b3GetWorld( jointId.world0 );
+	B3_REC( world, SphericalJointEnableSwingTwistSpring, jointId, enableSpring );
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_sphericalJoint );
+	if ( enableSpring != base->sphericalJoint.enableSwingTwistSpring )
+	{
+		base->sphericalJoint.springImpulse = b3Vec3_zero;
+		base->sphericalJoint.twistSpringImpulse = b3Vec3_zero;
+	}
+	base->sphericalJoint.enableSwingTwistSpring = enableSpring;
+}
+
+bool b3SphericalJoint_IsSwingTwistSpringEnabled( b3JointId jointId )
+{
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_sphericalJoint );
+	return base->sphericalJoint.enableSwingTwistSpring;
+}
+
+void b3SphericalJoint_SetSwingSpringHertz( b3JointId jointId, float hertz )
+{
+	B3_ASSERT( b3IsValidFloat( hertz ) && hertz >= 0.0f );
+	b3World* world = b3GetWorld( jointId.world0 );
+	B3_REC( world, SphericalJointSetSwingSpringHertz, jointId, hertz );
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_sphericalJoint );
+	base->sphericalJoint.swingHertz = hertz;
+}
+
+float b3SphericalJoint_GetSwingSpringHertz( b3JointId jointId )
+{
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_sphericalJoint );
+	return base->sphericalJoint.swingHertz;
+}
+
+void b3SphericalJoint_SetSwingSpringDampingRatio( b3JointId jointId, float dampingRatio )
+{
+	B3_ASSERT( b3IsValidFloat( dampingRatio ) && dampingRatio >= 0.0f );
+	b3World* world = b3GetWorld( jointId.world0 );
+	B3_REC( world, SphericalJointSetSwingSpringDampingRatio, jointId, dampingRatio );
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_sphericalJoint );
+	base->sphericalJoint.swingDampingRatio = dampingRatio;
+}
+
+float b3SphericalJoint_GetSwingSpringDampingRatio( b3JointId jointId )
+{
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_sphericalJoint );
+	return base->sphericalJoint.swingDampingRatio;
+}
+
+void b3SphericalJoint_SetTwistSpringHertz( b3JointId jointId, float hertz )
+{
+	B3_ASSERT( b3IsValidFloat( hertz ) && hertz >= 0.0f );
+	b3World* world = b3GetWorld( jointId.world0 );
+	B3_REC( world, SphericalJointSetTwistSpringHertz, jointId, hertz );
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_sphericalJoint );
+	base->sphericalJoint.twistHertz = hertz;
+}
+
+float b3SphericalJoint_GetTwistSpringHertz( b3JointId jointId )
+{
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_sphericalJoint );
+	return base->sphericalJoint.twistHertz;
+}
+
+void b3SphericalJoint_SetTwistSpringDampingRatio( b3JointId jointId, float dampingRatio )
+{
+	B3_ASSERT( b3IsValidFloat( dampingRatio ) && dampingRatio >= 0.0f );
+	b3World* world = b3GetWorld( jointId.world0 );
+	B3_REC( world, SphericalJointSetTwistSpringDampingRatio, jointId, dampingRatio );
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_sphericalJoint );
+	base->sphericalJoint.twistDampingRatio = dampingRatio;
+}
+
+float b3SphericalJoint_GetTwistSpringDampingRatio( b3JointId jointId )
+{
+	b3JointSim* base = b3GetJointSimCheckType( jointId, b3_sphericalJoint );
+	return base->sphericalJoint.twistDampingRatio;
+}
+
 void b3SphericalJoint_EnableMotor( b3JointId jointId, bool enableMotor )
 {
 	b3World* world = b3GetWorld( jointId.world0 );
@@ -285,6 +365,7 @@ b3Vec3 b3GetSphericalJointTorque( b3World* world, b3JointSim* base )
 
 	b3SphericalJoint* joint = &base->sphericalJoint;
 	b3Vec3 impulse = b3Add( joint->springImpulse, joint->motorImpulse );
+	impulse = b3Add( impulse, joint->twistSpringImpulse ); // nukabox3d
 	impulse = b3MulAdd( impulse, joint->lowerTwistImpulse - joint->upperTwistImpulse, twistAxis );
 	impulse = b3MulAdd( impulse, joint->swingImpulse, swingAxis );
 	b3Vec3 torque = b3MulSV( world->inv_h, impulse );
@@ -389,12 +470,16 @@ void b3PrepareSphericalJoint( b3JointSim* base, b3StepContext* context )
 	}
 
 	joint->springSoftness = b3MakeSoft( joint->hertz, joint->dampingRatio, context->h );
+	// nukabox3d: swing/twist spring
+	joint->swingSoftness = b3MakeSoft( joint->swingHertz, joint->swingDampingRatio, context->h );
+	joint->twistSoftness = b3MakeSoft( joint->twistHertz, joint->twistDampingRatio, context->h );
 
 	if ( context->enableWarmStarting == false )
 	{
 		joint->linearImpulse = b3Vec3_zero;
 		joint->motorImpulse = b3Vec3_zero;
 		joint->springImpulse = b3Vec3_zero;
+		joint->twistSpringImpulse = b3Vec3_zero;
 		joint->swingImpulse = 0.0f;
 		joint->lowerTwistImpulse = 0.0f;
 		joint->upperTwistImpulse = 0.0f;
@@ -427,6 +512,7 @@ void b3WarmStartSphericalJoint( b3JointSim* base, b3StepContext* context )
 	b3Vec3 rB = b3RotateVector( stateB->deltaRotation, joint->frameB.p );
 
 	b3Vec3 angularImpulse = b3Add( joint->springImpulse, joint->motorImpulse );
+	angularImpulse = b3Add( angularImpulse, joint->twistSpringImpulse ); // nukabox3d: zero unless swing/twist spring
 	angularImpulse = b3MulSub( angularImpulse, joint->swingImpulse, joint->swingAxis );
 	angularImpulse = b3MulAdd( angularImpulse, joint->lowerTwistImpulse - joint->upperTwistImpulse, joint->twistJacobian );
 
@@ -475,14 +561,57 @@ void b3SolveSphericalJoint( b3JointSim* base, b3StepContext* context, bool useBi
 	b3Quat relQ = b3InvMulQuat( quatA, quatB );
 
 	if ( fixedRotation == false &&
-		 ( joint->enableSpring || joint->enableMotor || joint->enableTwistLimit || joint->enableConeLimit ) )
+		 ( joint->enableSpring || joint->enableSwingTwistSpring || joint->enableMotor || joint->enableTwistLimit || joint->enableConeLimit ) )
 	{
 		b3Matrix3 invInertiaSum = b3AddMM( iA, iB );
 		b3Vec3 cdot = b3Sub( wB, wA );
 		b3Vec3 angularImpulse = b3Vec3_zero;
 
+		// nukabox3d: swing/twist spring. Split the same rotation error as the single spring into a twist part
+		// about the target twist axis and a swing part (the remainder), each with its own soft constraint.
+		// Scalar rows: one along the twist axis, two along an orthonormal basis of the swing plane.
+		if ( joint->enableSwingTwistSpring )
+		{
+			b3Vec3 deltaRotation = b3DeltaQuatToRotation( relQ, joint->targetRotation );
+			b3Vec3 c = b3Neg( b3RotateVector( quatA, deltaRotation ) );
+
+			// twist axis: frame B z-axis at the target rotation, in world space
+			b3Vec3 axis = b3RotateVector( quatA, b3RotateVector( joint->targetRotation, b3Vec3_axisZ ) );
+			b3Vec3 ref = b3AbsFloat( axis.x ) < 0.6f ? b3Vec3_axisX : b3Vec3_axisY;
+			b3Vec3 u = b3Normalize( b3Cross( axis, ref ) );
+			b3Vec3 v = b3Cross( axis, u );
+
+			b3Vec3 dirs[3] = { axis, u, v };
+			for ( int i = 0; i < 3; ++i )
+			{
+				b3Vec3 n = dirs[i];
+				b3Vec3 response = b3MulMV( invInertiaSum, n );
+				float k = b3Dot( n, response );
+				if ( base->armature > 0.0f )
+				{
+					k += base->armature * b3Dot( response, response );
+				}
+
+				if ( k <= 0.0f )
+				{
+					continue;
+				}
+
+				b3Softness soft = i == 0 ? joint->twistSoftness : joint->swingSoftness;
+				b3Vec3* accumulated = i == 0 ? &joint->twistSpringImpulse : &joint->springImpulse;
+
+				float bias = soft.biasRate * b3Dot( n, c );
+				float oldImpulse = b3Dot( n, *accumulated );
+				float deltaImpulse = -soft.massScale * ( b3Dot( n, cdot ) + bias ) / k - soft.impulseScale * oldImpulse;
+				*accumulated = b3MulAdd( *accumulated, deltaImpulse, n );
+
+				cdot = b3MulAdd( cdot, deltaImpulse, response );
+				angularImpulse = b3MulAdd( angularImpulse, deltaImpulse, n );
+			}
+		}
+
 		// Solve spring
-		if ( joint->enableSpring )
+		if ( joint->enableSpring && joint->enableSwingTwistSpring == false )
 		{
 			// Rotation constraint error
 			b3Vec3 deltaRotation = b3DeltaQuatToRotation( relQ, joint->targetRotation );

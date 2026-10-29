@@ -734,6 +734,12 @@ b3JointId b3CreateSphericalJoint( b3WorldId worldId, const b3SphericalJointDef* 
 	joint->sphericalJoint.maxMotorTorque = def->maxMotorTorque;
 	joint->sphericalJoint.motorVelocity = def->motorVelocity;
 	joint->sphericalJoint.enableSpring = def->enableSpring;
+	// nukabox3d: swing/twist spring
+	joint->sphericalJoint.enableSwingTwistSpring = def->enableSwingTwistSpring;
+	joint->sphericalJoint.swingHertz = def->swingHertz;
+	joint->sphericalJoint.swingDampingRatio = def->swingDampingRatio;
+	joint->sphericalJoint.twistHertz = def->twistHertz;
+	joint->sphericalJoint.twistDampingRatio = def->twistDampingRatio;
 	joint->sphericalJoint.maxSpringTorque = b3MaxFloat( 0.0f, def->maxSpringTorque );
 	joint->sphericalJoint.enableConeLimit = def->enableConeLimit;
 	joint->sphericalJoint.enableTwistLimit = def->enableTwistLimit;

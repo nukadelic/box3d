@@ -606,6 +606,11 @@ b3SphericalJointDef b3RecR_SPHERICALJOINTDEF( b3RecReader* rdr )
 	def.dampingRatio = b3RecR_F32( rdr );
 	def.maxSpringTorque = b3RecR_F32( rdr );
 	def.targetRotation = b3RecR_QUAT( rdr );
+	def.enableSwingTwistSpring = b3RecR_BOOL( rdr );
+	def.swingHertz = b3RecR_F32( rdr );
+	def.swingDampingRatio = b3RecR_F32( rdr );
+	def.twistHertz = b3RecR_F32( rdr );
+	def.twistDampingRatio = b3RecR_F32( rdr );
 	def.enableConeLimit = b3RecR_BOOL( rdr );
 	def.coneAngle = b3RecR_F32( rdr );
 	def.enableTwistLimit = b3RecR_BOOL( rdr );
@@ -1592,6 +1597,31 @@ static void b3RecDispatch_SphericalJointEnableSpring( const b3RecArgs_SphericalJ
 static void b3RecDispatch_SphericalJointSetMaxSpringTorque( const b3RecArgs_SphericalJointSetMaxSpringTorque* a, b3RecReader* rdr )
 {
 	b3SphericalJoint_SetMaxSpringTorque( b3RecMakeJointId( rdr, a->joint ), a->maxTorque );
+}
+
+static void b3RecDispatch_SphericalJointEnableSwingTwistSpring( const b3RecArgs_SphericalJointEnableSwingTwistSpring* a, b3RecReader* rdr )
+{
+	b3SphericalJoint_EnableSwingTwistSpring( b3RecMakeJointId( rdr, a->joint ), a->enableSpring );
+}
+
+static void b3RecDispatch_SphericalJointSetSwingSpringHertz( const b3RecArgs_SphericalJointSetSwingSpringHertz* a, b3RecReader* rdr )
+{
+	b3SphericalJoint_SetSwingSpringHertz( b3RecMakeJointId( rdr, a->joint ), a->hertz );
+}
+
+static void b3RecDispatch_SphericalJointSetSwingSpringDampingRatio( const b3RecArgs_SphericalJointSetSwingSpringDampingRatio* a, b3RecReader* rdr )
+{
+	b3SphericalJoint_SetSwingSpringDampingRatio( b3RecMakeJointId( rdr, a->joint ), a->dampingRatio );
+}
+
+static void b3RecDispatch_SphericalJointSetTwistSpringHertz( const b3RecArgs_SphericalJointSetTwistSpringHertz* a, b3RecReader* rdr )
+{
+	b3SphericalJoint_SetTwistSpringHertz( b3RecMakeJointId( rdr, a->joint ), a->hertz );
+}
+
+static void b3RecDispatch_SphericalJointSetTwistSpringDampingRatio( const b3RecArgs_SphericalJointSetTwistSpringDampingRatio* a, b3RecReader* rdr )
+{
+	b3SphericalJoint_SetTwistSpringDampingRatio( b3RecMakeJointId( rdr, a->joint ), a->dampingRatio );
 }
 
 static void b3RecDispatch_SphericalJointSetSpringHertz( const b3RecArgs_SphericalJointSetSpringHertz* a, b3RecReader* rdr )

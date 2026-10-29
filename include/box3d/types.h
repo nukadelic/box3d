@@ -1011,6 +1011,25 @@ typedef struct b3SphericalJointDef
 	/// Target spring rotation, joint frame B relative to joint frame A.
 	b3Quat targetRotation;
 
+	// nukabox3d: optional swing/twist spring
+	/// Enable separate swing and twist springs instead of the single spring above.
+	/// When enabled, enableSpring, hertz, dampingRatio and maxSpringTorque are ignored.
+	/// The twist axis is the z-axis of frame B at the target rotation. Twist is the part of the
+	/// rotation error about this axis, swing is the remainder (it moves the axis).
+	bool enableSwingTwistSpring;
+
+	/// Swing spring stiffness in Hertz. Non-negative number.
+	float swingHertz;
+
+	/// Swing spring damping ratio, non-dimensional. Non-negative number.
+	float swingDampingRatio;
+
+	/// Twist spring stiffness in Hertz. Non-negative number.
+	float twistHertz;
+
+	/// Twist spring damping ratio, non-dimensional. Non-negative number.
+	float twistDampingRatio;
+
 	/// A flag to enable the cone limit. The cone is centered on the frameA z-axis.
 	bool enableConeLimit;
 

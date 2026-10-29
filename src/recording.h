@@ -50,7 +50,8 @@ typedef struct b3World b3World;
 // Major version 6 widened the body def with the safety factor.
 // Major version 7 added maxSpringTorque to the revolute and spherical joint defs.
 // Major version 8 added armature to the joint def base.
-#define B3_REC_VERSION_MAJOR 8
+// Major version 9 added the swing/twist spring to the spherical joint def.
+#define B3_REC_VERSION_MAJOR 9
 
 // Minor tracks op-stream additions that keep the 48 byte header shape.
 // Minor version 7 made the contact body sim locators persistent
