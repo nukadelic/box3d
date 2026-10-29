@@ -231,6 +231,7 @@ typedef struct b3RevoluteJoint
 	b3Vec3 deltaCenter;
 	float deltaAngle;
 	float axialMass;
+	float axialDriveMass;
 	b3Softness springSoftness;
 
 	bool enableSpring;
@@ -359,6 +360,9 @@ typedef struct b3JointSim
 
 	float constraintHertz;
 	float constraintDampingRatio;
+
+	// Rotor inertia for the revolute and spherical spring and motor rows
+	float armature;
 
 	b3Softness constraintSoftness;
 

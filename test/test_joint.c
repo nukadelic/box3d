@@ -885,6 +885,148 @@ static int TestSpringTorqueClamp( void )
 }
 
 
+// Two free bodies joined by a motor driven revolute or spherical joint. Returns the relative angular speed after a few steps.
+static float RunArmatureScenario( bool spherical, float armature, bool setField, b3Quat* finalRotation )
+{
+	b3WorldDef worldDef = b3DefaultWorldDef();
+	worldDef.gravity = b3Vec3_zero;
+	b3WorldId worldId = b3CreateWorld( &worldDef );
+
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+	shapeDef.density = 1.0f;
+	b3BoxHull box = b3MakeCubeHull( 0.5f );
+
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	bodyDef.type = b3_dynamicBody;
+	bodyDef.position = (b3Pos){ 0.0f, 0.0f, 0.0f };
+	b3BodyId bodyA = b3CreateBody( worldId, &bodyDef );
+	b3CreateHullShape( bodyA, &shapeDef, &box.base );
+	bodyDef.position = (b3Pos){ 0.0f, 0.0f, 0.0f };
+	b3BodyId bodyB = b3CreateBody( worldId, &bodyDef );
+	b3CreateHullShape( bodyB, &shapeDef, &box.base );
+
+	// The motor has a finite torque so the bodies see a known torque, the same on both sides
+	if ( spherical )
+	{
+		b3SphericalJointDef def = b3DefaultSphericalJointDef();
+		def.base.bodyIdA = bodyA;
+		def.base.bodyIdB = bodyB;
+		def.enableMotor = true;
+		def.motorVelocity = (b3Vec3){ 0.0f, 0.0f, 10.0f };
+		def.maxMotorTorque = 1.0f;
+		if ( setField )
+		{
+			def.base.armature = armature;
+		}
+		b3CreateSphericalJoint( worldId, &def );
+	}
+	else
+	{
+		b3RevoluteJointDef def = b3DefaultRevoluteJointDef();
+		def.base.bodyIdA = bodyA;
+		def.base.bodyIdB = bodyB;
+		def.enableMotor = true;
+		def.motorSpeed = 10.0f;
+		def.maxMotorTorque = 1.0f;
+		if ( setField )
+		{
+			def.base.armature = armature;
+		}
+		b3CreateRevoluteJoint( worldId, &def );
+	}
+
+	// Free the pair from the joint's own anchor drift: nothing but the motor acts
+	for ( int i = 0; i < 4; ++i )
+	{
+		b3World_Step( worldId, 1.0f / 60.0f, 4 );
+	}
+
+	b3Vec3 rel = b3Sub( b3Body_GetAngularVelocity( bodyB ), b3Body_GetAngularVelocity( bodyA ) );
+	*finalRotation = b3Body_GetRotation( bodyB );
+	float speed = b3Length( rel );
+	b3DestroyWorld( worldId );
+	return speed;
+}
+
+// The motor is torque limited, so the same torque is applied for every armature. The spring row below
+// is not saturated, so armature must slow the approach to the target.
+static float RunArmatureSpring( float armature, bool spherical )
+{
+	b3WorldDef worldDef = b3DefaultWorldDef();
+	worldDef.gravity = b3Vec3_zero;
+	b3WorldId worldId = b3CreateWorld( &worldDef );
+
+	b3ShapeDef shapeDef = b3DefaultShapeDef();
+	shapeDef.density = 1.0f;
+	b3BoxHull box = b3MakeCubeHull( 0.5f );
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	bodyDef.type = b3_dynamicBody;
+	b3BodyId bodyA = b3CreateBody( worldId, &bodyDef );
+	b3CreateHullShape( bodyA, &shapeDef, &box.base );
+	b3BodyId bodyB = b3CreateBody( worldId, &bodyDef );
+	b3CreateHullShape( bodyB, &shapeDef, &box.base );
+
+	if ( spherical )
+	{
+		b3SphericalJointDef def = b3DefaultSphericalJointDef();
+		def.base.bodyIdA = bodyA;
+		def.base.bodyIdB = bodyB;
+		def.base.armature = armature;
+		def.enableSpring = true;
+		def.hertz = 2.0f;
+		def.dampingRatio = 1.0f;
+		def.targetRotation = b3MakeQuatFromAxisAngle( b3Vec3_axisZ, 0.5f );
+		b3CreateSphericalJoint( worldId, &def );
+	}
+	else
+	{
+		b3RevoluteJointDef def = b3DefaultRevoluteJointDef();
+		def.base.bodyIdA = bodyA;
+		def.base.bodyIdB = bodyB;
+		def.base.armature = armature;
+		def.enableSpring = true;
+		def.hertz = 2.0f;
+		def.dampingRatio = 1.0f;
+		def.targetAngle = 0.5f;
+		b3CreateRevoluteJoint( worldId, &def );
+	}
+
+	// One step: the spring has had time to accelerate the bodies but not to reach the target
+	b3World_Step( worldId, 1.0f / 60.0f, 4 );
+	float speed = b3Length( b3Sub( b3Body_GetAngularVelocity( bodyB ), b3Body_GetAngularVelocity( bodyA ) ) );
+	b3DestroyWorld( worldId );
+	return speed;
+}
+
+static int TestArmature( void )
+{
+	for ( int spherical = 0; spherical < 2; ++spherical )
+	{
+		// zero armature is bit identical to the default definition
+		b3Quat qDefault, qZero, qNegative;
+		float vDefault = RunArmatureScenario( spherical, 0.0f, false, &qDefault );
+		float vZero = RunArmatureScenario( spherical, 0.0f, true, &qZero );
+		float vNegative = RunArmatureScenario( spherical, -1.0f, true, &qNegative );
+		ENSURE( vDefault > 0.0f );
+		ENSURE( vDefault == vZero );
+		ENSURE( vDefault == vNegative );
+		ENSURE( memcmp( &qDefault, &qZero, sizeof( b3Quat ) ) == 0 );
+		ENSURE( memcmp( &qDefault, &qNegative, sizeof( b3Quat ) ) == 0 );
+
+		// the spring torque is proportional to the effective mass, so more armature means less acceleration
+		float v0 = RunArmatureSpring( 0.0f, spherical );
+		float v1 = RunArmatureSpring( 0.1f, spherical );
+		float v2 = RunArmatureSpring( 1.0f, spherical );
+		float v3 = RunArmatureSpring( 10.0f, spherical );
+		ENSURE( v0 > 0.0f );
+		ENSURE( v1 < v0 );
+		ENSURE( v2 < v1 );
+		ENSURE( v3 < v2 );
+	}
+
+	return 0;
+}
+
 int JointTest( void )
 {
 	RUN_SUBTEST( TestParallelJoint );
@@ -897,6 +1039,7 @@ int JointTest( void )
 	RUN_SUBTEST( TestRevoluteJoint );
 	RUN_SUBTEST( TestSphericalJoint );
 	RUN_SUBTEST( TestSpringTorqueClamp );
+	RUN_SUBTEST( TestArmature );
 	RUN_SUBTEST( TestWeldJoint );
 	RUN_SUBTEST( TestWheelJoint );
 	RUN_SUBTEST( TestCreateJointClearsContacts );

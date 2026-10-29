@@ -30,6 +30,7 @@ static b3JointDef b3DefaultJointDef( void )
 	def.constraintHertz = 60.0f;
 	def.constraintDampingRatio = 2.0f;
 	def.drawScale = b3GetLengthUnitsPerMeter();
+	def.armature = 0.0f;
 	def.internalValue = B3_SECRET_COOKIE;
 	return def;
 }
@@ -372,6 +373,7 @@ static b3JointPair b3CreateJoint( b3World* world, const b3JointDef* def, b3Joint
 	jointSim->type = type;
 	jointSim->constraintHertz = def->constraintHertz;
 	jointSim->constraintDampingRatio = def->constraintDampingRatio;
+	jointSim->armature = b3MaxFloat( 0.0f, def->armature );
 	jointSim->constraintSoftness = (b3Softness){
 		.biasRate = 0.0f,
 		.massScale = 1.0f,

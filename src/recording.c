@@ -425,6 +425,7 @@ static void b3RecW_JointBase( b3RecBuffer* buf, const b3JointDef* base )
 	b3RecW_F32( buf, base->constraintHertz );
 	b3RecW_F32( buf, base->constraintDampingRatio );
 	b3RecW_F32( buf, base->drawScale );
+	b3RecW_F32( buf, base->armature );
 	b3RecW_BOOL( buf, base->collideConnected );
 	// internalValue omitted
 }

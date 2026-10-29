@@ -693,6 +693,13 @@ typedef struct b3JointDef
 	/// Debug draw scale
 	float drawScale;
 
+	/// Rotor inertia in kg*m^2, must be >= 0. Only used by revolute and spherical joints, ignored by other types.
+	/// It makes the spring and motor rows respond more slowly, as if the joint had extra rotational inertia.
+	/// Limit rows are not affected. The angular effective mass m = 1 / k of the spring and motor rows, where
+	/// k = invIA + invIB (or the 3x3 equivalent K), is replaced by m' = 1 / ( k + armature * k * k )
+	/// (m' = inverse( K + armature * K * K )). Zero leaves the behavior unchanged.
+	float armature;
+
 	/// Set this flag to true if the attached bodies should collide
 	bool collideConnected;
 

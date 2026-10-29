@@ -504,6 +504,7 @@ static void b3RecR_JointBase( b3RecReader* rdr, b3JointDef* base )
 	base->constraintHertz = b3RecR_F32( rdr );
 	base->constraintDampingRatio = b3RecR_F32( rdr );
 	base->drawScale = b3RecR_F32( rdr );
+	base->armature = b3RecR_F32( rdr );
 	base->collideConnected = b3RecR_BOOL( rdr );
 	base->userData = NULL;
 }

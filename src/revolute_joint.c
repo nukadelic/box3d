@@ -319,6 +319,13 @@ void b3PrepareRevoluteJoint( b3JointSim* base, b3StepContext* context )
 		b3Vec3 rotationAxisZ = b3RotateVector( joint->frameA.q, b3Vec3_axisZ );
 		float k = b3Dot( rotationAxisZ, b3MulMV( invInertiaSum, rotationAxisZ ) );
 		joint->axialMass = k > 0.0f ? 1.0f / k : 0.0f;
+
+		// Armature slows the spring and motor rows, limits use the plain mass
+		joint->axialDriveMass = joint->axialMass;
+		if ( base->armature > 0.0f && k > 0.0f )
+		{
+			joint->axialDriveMass = 1.0f / ( k + base->armature * k * k );
+		}
 		joint->rotationAxisZ = rotationAxisZ;
 	}
 
@@ -446,7 +453,7 @@ void b3SolveRevoluteJoint( b3JointSim* base, b3StepContext* context, bool useBia
 			float massScale = joint->springSoftness.massScale;
 			float impulseScale = joint->springSoftness.impulseScale;
 
-			float deltaImpulse = -massScale * joint->axialMass * ( axialCdot + bias ) - impulseScale * joint->springImpulse;
+			float deltaImpulse = -massScale * joint->axialDriveMass * ( axialCdot + bias ) - impulseScale * joint->springImpulse;
 			float oldImpulse = joint->springImpulse;
 			joint->springImpulse = oldImpulse + deltaImpulse;
 			if ( joint->maxSpringTorque > 0.0f )
@@ -469,7 +476,7 @@ void b3SolveRevoluteJoint( b3JointSim* base, b3StepContext* context, bool useBia
 			float cdot = axialCdot - joint->motorSpeed;
 			float oldImpulse = joint->motorImpulse;
 			float maxImpulse = joint->maxMotorTorque * context->h;
-			float deltaImpulse = b3ClampFloat( -joint->axialMass * cdot, -maxImpulse - oldImpulse, maxImpulse - oldImpulse );
+			float deltaImpulse = b3ClampFloat( -joint->axialDriveMass * cdot, -maxImpulse - oldImpulse, maxImpulse - oldImpulse );
 			joint->motorImpulse = oldImpulse + deltaImpulse;
 
 			axialCdot += k * deltaImpulse;

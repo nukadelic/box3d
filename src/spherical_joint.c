@@ -375,7 +375,13 @@ void b3PrepareSphericalJoint( b3JointSim* base, b3StepContext* context )
 
 	if ( base->fixedRotation == false )
 	{
-		joint->rotationMass = b3InvertMatrix( invInertiaSum );
+		b3Matrix3 driveInertia = invInertiaSum;
+		if ( base->armature > 0.0f )
+		{
+			// K + armature * K * K
+			driveInertia = b3AddMM( invInertiaSum, b3MulSM( base->armature, b3MulMM( invInertiaSum, invInertiaSum ) ) );
+		}
+		joint->rotationMass = b3InvertMatrix( driveInertia );
 	}
 	else
 	{
